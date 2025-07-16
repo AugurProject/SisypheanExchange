@@ -1,22 +1,22 @@
 /*
 
-  Copyright 2018 ZeroEx Intl.
+Copyright 2018 ZeroEx Intl.
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 
 */
 
-pragma solidity 0.8.29;
+pragma solidity 0.8.30;
 
 
 /// @title ERC-1155 Multi Token Standard
@@ -79,20 +79,15 @@ interface IERC1155 {
 	/// MUST throw if `_to` is the zero address.
 	/// MUST throw if balance of sender for token `_id` is lower than the `_value` sent.
 	/// MUST throw on any other error.
-	/// When transfer is complete, this function MUST check if `_to` is a smart contract (code size > 0).
-	/// If so, it MUST call `onERC1155Received` on `_to` and revert if the return value
-	/// is not `bytes4(keccak256("onERC1155Received(address,address,uint256,uint256,bytes)"))`.
 	/// @param from    Source address
 	/// @param to      Target address
 	/// @param id      ID of the token type
 	/// @param value   Transfer amount
-	/// @param data    Additional data with no specified format, sent in call to `_to`
 	function safeTransferFrom(
 		address from,
 		address to,
 		uint256 id,
-		uint256 value,
-		bytes calldata data
+		uint256 value
 	)
 		external;
 
@@ -103,20 +98,15 @@ interface IERC1155 {
 	/// MUST throw if length of `_ids` is not the same as length of `_values`.
 	///  MUST throw if any of the balance of sender for token `_ids` is lower than the respective `_values` sent.
 	/// MUST throw on any other error.
-	/// When transfer is complete, this function MUST check if `_to` is a smart contract (code size > 0).
-	/// If so, it MUST call `onERC1155BatchReceived` on `_to` and revert if the return value
-	/// is not `bytes4(keccak256("onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)"))`.
 	/// @param from    Source addresses
 	/// @param to      Target addresses
 	/// @param ids     IDs of each token type
 	/// @param values  Transfer amounts per token type
-	/// @param data    Additional data with no specified format, sent in call to `_to`
 	function safeBatchTransferFrom(
 		address from,
 		address to,
 		uint256[] calldata ids,
-		uint256[] calldata values,
-		bytes calldata data
+		uint256[] calldata values
 	)
 		external;
 

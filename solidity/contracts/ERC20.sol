@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // OpenZeppelin Contracts (last updated v5.2.0) (token/ERC20/ERC20.sol)
 
-pragma solidity 0.8.29;
+pragma solidity 0.8.30;
 
 import {IERC20} from "./IERC20.sol";
 import {IERC20Metadata} from "./IERC20Metadata.sol";
@@ -9,23 +9,23 @@ import {Context} from "./Context.sol";
 import {IERC20Errors} from "./draft-IERC6093.sol";
 
 /**
- * @dev Implementation of the {IERC20} interface.
- *
- * This implementation is agnostic to the way tokens are created. This means
- * that a supply mechanism has to be added in a derived contract using {_mint}.
- *
- * TIP: For a detailed writeup see our guide
- * https://forum.openzeppelin.com/t/how-to-implement-erc20-supply-mechanisms/226[How
- * to implement supply mechanisms].
- *
- * The default value of {decimals} is 18. To change this, you should override
- * this function so it returns a different value.
- *
- * We have followed general OpenZeppelin Contracts guidelines: functions revert
- * instead returning `false` on failure. This behavior is nonetheless
- * conventional and does not conflict with the expectations of ERC-20
- * applications.
- */
+* @dev Implementation of the {IERC20} interface.
+*
+* This implementation is agnostic to the way tokens are created. This means
+* that a supply mechanism has to be added in a derived contract using {_mint}.
+*
+* TIP: For a detailed writeup see our guide
+* https://forum.openzeppelin.com/t/how-to-implement-erc20-supply-mechanisms/226[How
+* to implement supply mechanisms].
+*
+* The default value of {decimals} is 18. To change this, you should override
+* this function so it returns a different value.
+*
+* We have followed general OpenZeppelin Contracts guidelines: functions revert
+* instead returning `false` on failure. This behavior is nonetheless
+* conventional and does not conflict with the expectations of ERC-20
+* applications.
+*/
 abstract contract ERC20 is Context, IERC20, IERC20Metadata, IERC20Errors {
 	mapping(address account => uint256) internal _balances;
 

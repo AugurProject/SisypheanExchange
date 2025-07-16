@@ -26,8 +26,10 @@ describe('Contract Test Suite', () => {
 	// Can buy complete sets
 
 	// Can cash out complete sets
+		// Time based fee testing
 
 	// Market can resolve and distribute Cash
+		// Time based fee testing
 
 	// Market can be disputed and resolve
 
