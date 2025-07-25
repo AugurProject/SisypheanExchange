@@ -4,6 +4,7 @@ pragma solidity 0.8.30;
 import './Reporting.sol';
 import './ERC20.sol';
 import './Constants.sol';
+import './ISisypheanExchange.sol';
 
 /**
 * @title Universe
@@ -17,8 +18,10 @@ contract Universe is ERC20("Cash", "CASH") {
 		string extraInfo;
 	}
 
+	ISisypheanExchange public sisypheanExchange;
 	Universe public parentUniverse;
 	uint256 public parentOutcome;
+	uint256 public universeId;
 	ERC20 public reputationToken;
 	mapping(uint256 => MarketData) public markets;
 	mapping(uint256 => Universe) public children;
@@ -30,6 +33,7 @@ contract Universe is ERC20("Cash", "CASH") {
 	constructor(Universe _parentUniverse, uint256 _parentOutcome) {
 		parentUniverse = _parentUniverse;
 		parentOutcome = _parentOutcome;
+		universeId = (_parentUniverse == Universe(address(0)) ? 0 : _parentUniverse.universeId() << 4) + _parentOutcome;
 		// TODO: For children this should generate a new REP token
 		reputationToken = ERC20(Constants.GENESIS_REPUTATION_TOKEN);
 	}
@@ -47,19 +51,25 @@ contract Universe is ERC20("Cash", "CASH") {
 	}
 
 	function createChildUniverse(uint256 _outcome) public returns (Universe) {
-		// TODO keep ref to sysEx contract from creation and send call to create child
+		sisypheanExchange.createChildUniverse(_outcome);
 	}
 
-	function createYesNoMarket(uint256 _endTime, address _designatedReporterAddress, string memory _extraInfo) public returns (uint256 _newMarket) {
+	function createMarket(uint256 _endTime, address _designatedReporterAddress, string memory _extraInfo) public returns (uint256 _newMarket) {
 		reputationToken.transferFrom(msg.sender, address(this), REP_BOND);
-		// TODO: Add Universe chain to first half of ID
-		uint256 _marketId = marketIdCounter++;
+		uint256 _marketId = uint256(bytes32(abi.encodePacked(uint128(universeId), uint128(++marketIdCounter))));
 		markets[_marketId] = MarketData(
 			_endTime,
 			_designatedReporterAddress,
 			_extraInfo
 		);
 		return _newMarket;
+	}
+
+	function unpackMarketId(uint256 _marketId) internal pure returns (uint256 _universe, uint256 _market) {
+		assembly {
+			_universe := shr(128, and(_marketId, 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000000000000000000000000000000))
+			_market := and(_marketId, 0x00000000000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF)
+		}
 	}
 
 	// TODO: Dispute / Fork logic

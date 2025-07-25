@@ -1,9 +1,9 @@
 import 'viem/window'
-import { getContractAddress, numberToBytes, encodeAbiParameters, keccak256 } from 'viem'
+import { getContractAddress, numberToBytes, encodeAbiParameters, keccak256, Abi } from 'viem'
 import { mainnet } from 'viem/chains'
 import { promises as fs } from 'fs'
 import { ReadClient, WriteClient } from './viem.js'
-import { PROXY_DEPLOYER_ADDRESS, TEST_ADDRESSES } from './constants.js'
+import { GENESIS_REPUTATION_TOKEN, NUM_TICKS, PROXY_DEPLOYER_ADDRESS, TEST_ADDRESSES } from './constants.js'
 import { addressString } from './bigint.js'
 import { Address } from 'viem'
 import { ABIS } from '../../../abi/abis.js'
@@ -28,11 +28,19 @@ const ContractArtifact = funtypes.ReadonlyObject({
 		'contracts/SisypheanExchange.sol': funtypes.ReadonlyObject({
 			SisypheanExchange: ContractDefinition
 		}),
+		'contracts/Universe.sol': funtypes.ReadonlyObject({
+			Universe: ContractDefinition
+		}),
+		'contracts/ShareToken.sol': funtypes.ReadonlyObject({
+			ShareToken: ContractDefinition
+		}),
 	}),
 })
 
 const contractLocation = './artifacts/Contracts.json'
 export const contractsArtifact = ContractArtifact.parse(JSON.parse(await fs.readFile(contractLocation, 'utf8')))
+
+export const initialTokenBalance = 1000000n * 10n**18n
 
 export async function sleep(milliseconds: number) {
 	await new Promise(resolve => setTimeout(resolve, milliseconds))
@@ -188,11 +196,25 @@ export const setERC1155Approval = async (client: WriteClient, tokenAddress: Addr
 	})
 }
 
+export const getERC20Balance = async (client: ReadClient, tokenAddress: Address, ownerAddress: Address) => {
+	return await client.readContract({
+		abi: ABIS.mainnet.erc20,
+		functionName: 'balanceOf',
+		address: tokenAddress,
+		args: [ownerAddress]
+	})
+}
+
+export const getETHBalance = async (client: ReadClient, address: Address) => {
+	return await client.getBalance({address})
+}
+
 export const setupTestAccounts = async (mockWindowEthereum: MockWindowEthereum) => {
 	const accountValues = TEST_ADDRESSES.map((address) => {
-		return { address: addressString(address), amount: 1000000n * 10n**18n}
+		return { address: addressString(address), amount: initialTokenBalance}
 	})
 	await mintETH(mockWindowEthereum, accountValues)
+	await mintERC20(mockWindowEthereum, addressString(GENESIS_REPUTATION_TOKEN), accountValues, 1n)
 }
 
 export async function ensureProxyDeployerDeployed(client: WriteClient): Promise<void> {
@@ -225,4 +247,99 @@ export const ensureSisypheanExchangeDeployed = async (client: WriteClient) => {
 	await ensureProxyDeployerDeployed(client)
 	const hash = await client.sendTransaction(deploySisypheanExchangeTransaction())
 	await client.waitForTransactionReceipt({ hash })
+}
+
+export function getShareTokenAddress() {
+	const bytecode: `0x${ string }` = `0x${ contractsArtifact.contracts['contracts/ShareToken.sol'].ShareToken.evm.bytecode.object }`
+	return getContractAddress({ bytecode, from: addressString(PROXY_DEPLOYER_ADDRESS), opcode: 'CREATE2', salt: numberToBytes(0) })
+}
+
+export const isShareTokenDeployed = async (client: ReadClient) => {
+	const expectedDeployedBytecode: `0x${ string }` = `0x${ contractsArtifact.contracts['contracts/ShareToken.sol'].ShareToken.evm.deployedBytecode.object }`
+	const address = getShareTokenAddress()
+	const deployedBytecode = await client.getCode({ address })
+	return deployedBytecode === expectedDeployedBytecode
+}
+
+export const deployShareTokenTransaction = () => {
+	const bytecode: `0x${ string }` = `0x${ contractsArtifact.contracts['contracts/ShareToken.sol'].ShareToken.evm.bytecode.object }`
+	return { to: addressString(PROXY_DEPLOYER_ADDRESS), data: bytecode } as const
+}
+
+export const ensureShareTokenDeployed = async (client: WriteClient) => {
+	await ensureProxyDeployerDeployed(client)
+	const hash = await client.sendTransaction(deployShareTokenTransaction())
+	await client.waitForTransactionReceipt({ hash })
+}
+
+export const createGenesisUniverse = async (client: WriteClient) => {
+	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
+		functionName: 'createGenesisUniverse',
+		address: sisypheanExchangeAddress,
+		args: []
+	})
+}
+
+export const getGenesisUniverse = async (client: ReadClient) => {
+	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
+	return await client.readContract({
+		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
+		functionName: 'genesisUniverse',
+		address: sisypheanExchangeAddress,
+		args: []
+	}) as Address
+}
+
+export const getUniverseLegit = async (client: ReadClient, shadyUniverse: Address) => {
+	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
+	return await client.readContract({
+		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
+		functionName: 'universes',
+		address: sisypheanExchangeAddress,
+		args: [shadyUniverse]
+	})
+}
+
+export const createMarket = async (client: WriteClient, universe: Address, endTime: bigint ,extraInfo: String) => {
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/Universe.sol'].Universe.abi as Abi,
+		functionName: 'createMarket',
+		address: universe,
+		args: [endTime, client.account.address, extraInfo]
+	})
+}
+
+export const getMarketData = async (client: ReadClient, universe: Address, marketId: bigint) => {
+	return await client.readContract({
+		abi: contractsArtifact.contracts['contracts/Universe.sol'].Universe.abi as Abi,
+		functionName: 'markets',
+		address: universe,
+		args: [marketId]
+	}) as [bigint, Address, string]
+}
+
+export const buyCompleteSets = async (client: WriteClient, universe: Address, marketId: bigint, account: Address, amount: bigint) => {
+	const shareTokenAddress = await getShareTokenAddress()
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/ShareToken.sol'].ShareToken.abi as Abi,
+		functionName: 'buyCompleteSets',
+		address: shareTokenAddress,
+		value: amount * NUM_TICKS,
+		args: [universe, marketId, account, amount]
+	})
+}
+
+export const getMarketShareTokenBalance = async (client: ReadClient, marketId: bigint, account: Address) => {
+	const shareTokenAddress = await getShareTokenAddress()
+	return await client.readContract({
+		abi: contractsArtifact.contracts['contracts/ShareToken.sol'].ShareToken.abi as Abi,
+		functionName: 'balanceOfMarketShares',
+		address: shareTokenAddress,
+		args: [marketId, account]
+	}) as [bigint, bigint, bigint]
 }

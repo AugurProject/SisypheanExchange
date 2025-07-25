@@ -2,7 +2,7 @@ import { EIP1193Provider } from 'viem'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, DEFAULT_CALL_ADDRESS } from './utils/constants.js'
 import { EthereumClientService } from './EthereumClientService.js'
 import { EthCallParams, EthereumJsonRpcRequest, EthGetLogsResponse, EthTransactionReceiptResponse, GetBlockReturn, SendTransactionParams } from './types/jsonRpcTypes.js'
-import { appendTransaction, createSimulationState, getInputFieldFromDataOrInput, getPreSimulated, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedTransactionByHash, getSimulatedTransactionCountOverStack, getSimulatedTransactionReceipt, mockSignTransaction, simulatedCall, simulateEstimateGas } from './SimulationModeEthereumClientService.js'
+import { appendTransaction, createSimulationState, getInputFieldFromDataOrInput, getPreSimulated, getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedTransactionByHash, getSimulatedTransactionCountOverStack, getSimulatedTransactionReceipt, mockSignTransaction, simulatedCall, simulateEstimateGas } from './SimulationModeEthereumClientService.js'
 import { SimulationState } from './types/visualizerTypes.js'
 import { StateOverrides } from './types/ethSimulateTypes.js'
 import { EthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
@@ -101,6 +101,10 @@ export const getMockedEthSimulateWindowEthereum = (): MockWindowEthereum => {
 		request: async (unknownArgs: unknown): Promise<any> => {
 			const args = EthereumJsonRpcRequest.parse(unknownArgs)
 			switch(args.method) {
+				case 'eth_getBalance': {
+					const result = await getSimulatedBalance(ethereumClientService, undefined, simulationState, args.params[0], args.params[1])
+					return EthereumQuantity.serialize(result)
+				}
 				case 'eth_call': {
 					const result = await call(ethereumClientService, simulationState, args)
 					if (result.error !== undefined) throw new Error(result.error.message)

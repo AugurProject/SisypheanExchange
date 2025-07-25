@@ -7,7 +7,7 @@ import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1
 import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from './types/jsonRpcTypes.js'
 import { assertNever, modifyObject } from './utils/typescript.js'
 import { SignMessageParams } from './types/jsonRpcSigningTypes.js'
-import { getCodeByteCode } from './utils/ethereumByteCodes.js'
+import { getCodeByteCode, getEthBalanceByteCode } from './utils/ethereumByteCodes.js'
 import { stripLeadingZeros } from './utils/typed-arrays.js'
 import { JsonRpcResponseError } from './utils/errors.js'
 import { decodeFunctionResult, encodeFunctionData, hashMessage, hashTypedData, keccak256 } from 'viem'
@@ -17,7 +17,7 @@ import { StateOverrides } from './types/ethSimulateTypes.js'
 const MOCK_PUBLIC_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n // key used to sign simulated transatons
 const ADDRESS_FOR_PRIVATE_KEY_ONE = 0x7E5F4552091A69125d5DfCb7b8C2659029395Bdfn
-const GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
+const TEMP_CONTRACT_ADDRESS = 0x1ce438391307f908756fefe0fe220c0f0d51508an
 
 export const copySimulationState = (simulationState: SimulationState): SimulationState => {
 	return { ...simulationState, blocks: simulationState.blocks.map((block) => ({ stateOverrides: { ...block.stateOverrides }, signedMessages: [ ...block.signedMessages ], simulatedTransactions: [ ...block.simulatedTransactions ], timeIncreaseDelta: block.timeIncreaseDelta })) }
@@ -311,8 +311,55 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 	return await ethereumClientService.getTransactionReceipt(hash, requestAbortController)
 }
 
-export const getSimulatedBalance = async (_ethereumClientService: EthereumClientService, _requestAbortController: AbortController | undefined, _simulationState: SimulationState | undefined, _address: bigint, _blockTag: EthereumBlockTag = 'latest'): Promise<bigint> => {
-	throw new Error('eth_getBalance not implemented')
+
+const BALANCE_ABI = [{
+	"inputs": [
+		{
+		"internalType": "address",
+		"name": "addr",
+		"type": "address"
+		}
+	],
+	"name": "getBalance",
+	"outputs": [
+		{
+		"internalType": "uint256",
+		"name": "balance",
+		"type": "uint256"
+		}
+	],
+	"stateMutability": "view",
+	"type": "function"
+}]
+export const getSimulatedBalance = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, address: bigint, blockTag: EthereumBlockTag = 'latest'): Promise<bigint> => {
+	if (simulationState == undefined) return await ethereumClientService.getBalance(address, blockTag, requestAbortController)
+
+	const block = await ethereumClientService.getBlock(requestAbortController)
+	if (block === null) throw new Error('The latest block is null')
+
+	const input = stringToUint8Array(encodeFunctionData({ abi: BALANCE_ABI, functionName: 'getBalance', args: [addressString(address)] }))
+
+	const getBalanceTransaction = {
+		type: '1559',
+		from: MOCK_ADDRESS,
+		chainId: ethereumClientService.getChainId(),
+		nonce: await ethereumClientService.getTransactionCount(MOCK_ADDRESS, 'latest', requestAbortController),
+		maxFeePerGas: 0n,
+		maxPriorityFeePerGas: 0n,
+		gas: block.gasLimit,
+		to: TEMP_CONTRACT_ADDRESS,
+		value: 0n,
+		input: input,
+		accessList: []
+	} as const
+	const multiCall = await simulatedMulticall(ethereumClientService, requestAbortController, simulationState, [getBalanceTransaction], { [addressString(TEMP_CONTRACT_ADDRESS)]: { code: getEthBalanceByteCode() } })
+	const lastBlock = multiCall.blocks[multiCall.blocks.length - 1]
+	if (lastBlock === undefined) throw new Error('last block did not exist in multicall')
+	const lastResult = lastBlock.simulatedTransactions[lastBlock.simulatedTransactions.length - 1]?.ethSimulateV1CallResult
+	if (lastResult === undefined) throw new Error('last result did not exist in multicall')
+	if (lastResult.status === 'failure') throw new Error(`Eth balance call failure: ${lastResult.error}`)
+	const parsed = decodeFunctionResult({ abi: BALANCE_ABI, functionName: 'getBalance', data: dataStringWith0xStart(lastResult.returnData) }) as number
+	return BigInt(parsed)
 }
 
 const AT_ABI = [{
@@ -354,12 +401,12 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 		maxFeePerGas: 0n,
 		maxPriorityFeePerGas: 0n,
 		gas: block.gasLimit,
-		to: GET_CODE_CONTRACT,
+		to: TEMP_CONTRACT_ADDRESS,
 		value: 0n,
 		input: input,
 		accessList: []
 	} as const
-	const multiCall = await simulatedMulticall(ethereumClientService, requestAbortController, simulationState, [getCodeTransaction], { [addressString(GET_CODE_CONTRACT)]: { code: getCodeByteCode() } })
+	const multiCall = await simulatedMulticall(ethereumClientService, requestAbortController, simulationState, [getCodeTransaction], { [addressString(TEMP_CONTRACT_ADDRESS)]: { code: getCodeByteCode() } })
 	const lastBlock = multiCall.blocks[multiCall.blocks.length - 1]
 	if (lastBlock === undefined) throw new Error('last block did not exist in multicall')
 	const lastResult = lastBlock.simulatedTransactions[lastBlock.simulatedTransactions.length - 1]?.ethSimulateV1CallResult

@@ -15,7 +15,7 @@ contract ShareToken is ERC1155 {
 	string constant public name = "Shares";
 	string constant public symbol = "SHARE";
 
-	function buyCompleteSets(IUniverse _universe, uint256 _market, address _account, uint256 _amount) external payable{
+	function buyCompleteSets(IUniverse _universe, uint256 _market, address _account, uint256 _amount) external payable {
 		uint256 _cost = _amount * Constants.NUM_TICKS;
 		require(_cost == msg.value, "Sent Ether is not equal to complete set purchase cost");
 		_universe.deposit{value: msg.value}(address(this));
@@ -52,30 +52,30 @@ contract ShareToken is ERC1155 {
 		// TODO send proceeds to recipient
 	}
 
-	/**
-	* @return The market associated with this Share Token ID
-	*/
-	function getMarket(uint256 _tokenId) external view returns(uint256) {
+	function getMarket(uint256 _tokenId) external pure returns(uint256) {
 		(uint256 _market, uint256 _outcome) = TokenId.unpackTokenId(_tokenId);
 		return _market;
 	}
 
-	/**
-	* @return The outcome associated with this Share Token ID
-	*/
-	function getOutcome(uint256 _tokenId) external view returns(uint256) {
+	function getOutcome(uint256 _tokenId) external pure returns(uint256) {
 		(uint256 _market, uint256 _outcome) = TokenId.unpackTokenId(_tokenId);
 		return _outcome;
 	}
 
 	function totalSupplyForMarketOutcome(uint256 _market, uint256 _outcome) public view returns (uint256) {
-		uint256 _tokenId = TokenId.getTokenId(_market, _outcome);
+		uint256 _tokenId = getTokenId(_market, _outcome);
 		return totalSupply(_tokenId);
 	}
 
 	function balanceOfMarketOutcome(uint256 _market, uint256 _outcome, address _account) public view returns (uint256) {
-		uint256 _tokenId = TokenId.getTokenId(_market, _outcome);
+		uint256 _tokenId = getTokenId(_market, _outcome);
 		return balanceOf(_account, _tokenId);
+	}
+
+	function balanceOfMarketShares(uint256 _market, address _account) public view returns (uint256[3] memory balances) {
+		balances[0] = balanceOf(_account, getTokenId(_market, 0));
+		balances[1] = balanceOf(_account, getTokenId(_market, 1));
+		balances[2] = balanceOf(_account, getTokenId(_market, 2));
 	}
 
 	function getTokenId(uint256 _market, uint256 _outcome) public pure returns (uint256 _tokenId) {
