@@ -43,7 +43,7 @@ contract ShareToken is ERC1155 {
 		}
 
 		_burnBatch(_owner, _tokenIds, _values);
-		_universe.withdraw(_owner, _recipient, _amount);
+		_universe.withdraw(address(this), _recipient, _amount * Constants.NUM_TICKS);
 	}
 
 	function claimTradingProceeds(IUniverse _universe, uint256 _market, address _owner, address _recipient) external {

@@ -2,7 +2,7 @@ import { describe, beforeEach, test } from 'node:test'
 import { getMockedEthSimulateWindowEthereum, MockWindowEthereum } from '../testsuite/simulator/MockWindowEthereum.js'
 import { createWriteClient } from '../testsuite/simulator/utils/viem.js'
 import { DAY, GENESIS_REPUTATION_TOKEN, NUM_TICKS, TEST_ADDRESSES } from '../testsuite/simulator/utils/constants.js'
-import { approveToken, buyCompleteSets, createGenesisUniverse, createMarket, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getETHBalance, getGenesisUniverse, getMarketData, getMarketShareTokenBalance, getUniverseLegit, initialTokenBalance, isSisypheanExchangeDeployed, setupTestAccounts } from '../testsuite/simulator/utils/utilities.js'
+import { approveToken, buyCompleteSets, createGenesisUniverse, createMarket, ensureBugReproDeployed, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getETHBalance, getGenesisUniverse, getMarketData, getMarketShareTokenBalance, getUniverseLegit, initialTokenBalance, isSisypheanExchangeDeployed, one, sellCompleteSets, set, setupTestAccounts, three, two } from '../testsuite/simulator/utils/utilities.js'
 import assert from 'node:assert'
 import { addressString } from '../testsuite/simulator/utils/bigint.js'
 
@@ -15,6 +15,20 @@ describe('Contract Test Suite', () => {
 	beforeEach(async () => {
 		mockWindow = getMockedEthSimulateWindowEthereum()
 		await setupTestAccounts(mockWindow)
+	})
+
+	test('bugRepro', async () => {
+		const client = createWriteClient(mockWindow, TEST_ADDRESSES[0], 0)
+
+		await ensureBugReproDeployed(client)
+
+		await one(client)
+		await two(client)
+		const result = await three(client)
+		const isSet = await set(client)
+		console.log(isSet)
+		//assert.ok(isSet, "Failed to set")
+		assert.strictEqual(result, 0n, "Failed to zero balance")
 	})
 
 	test('canDeployContract', async () => {
@@ -58,7 +72,7 @@ describe('Contract Test Suite', () => {
 		assert.strictEqual(marketData[2], "test", 'Market extraInfo not as expected')
 	})
 
-	test('canBuyCompleteSets', async () => {
+	test('canBuyAndSellCompleteSets', async () => {
 		const client = createWriteClient(mockWindow, TEST_ADDRESSES[0], 0)
 		await ensureSisypheanExchangeDeployed(client)
 		await ensureShareTokenDeployed(client)
@@ -89,10 +103,19 @@ describe('Contract Test Suite', () => {
 		assert.strictEqual(shareTokenBalancesAfterBuy[0], amountToBuy, "Shares not credited correctly")
 		assert.strictEqual(shareTokenBalancesAfterBuy[1], amountToBuy, "Shares not credited correctly")
 		assert.strictEqual(shareTokenBalancesAfterBuy[2], amountToBuy, "Shares not credited correctly")
-	})
 
-	// Can cash out complete sets
-		// Time based fee testing
+		await sellCompleteSets(client, genesisUniverse, marketId, client.account.address, client.account.address, amountToBuy)
+
+		const universeEthBalanceAfterSell = await getETHBalance(client, genesisUniverse)
+		assert.strictEqual(universeEthBalanceAfterSell, 0n, "ETH not returned correctly for selling complete sets")
+
+		const shareTokenBalancesAfterSell = await getMarketShareTokenBalance(client, marketId, client.account.address)
+		assert.strictEqual(shareTokenBalancesAfterSell[0], 0n, "Shares not burned correctly")
+		assert.strictEqual(shareTokenBalancesAfterSell[1], 0n, "Shares not burned correctly")
+		assert.strictEqual(shareTokenBalancesAfterSell[2], 0n, "Shares not burned correctly")
+
+		// TODO: Time based fee testing
+	})
 
 	// Market can resolve and distribute Cash
 		// Time based fee testing

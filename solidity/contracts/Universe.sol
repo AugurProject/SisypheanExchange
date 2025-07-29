@@ -46,7 +46,7 @@ contract Universe is ERC20("Cash", "CASH") {
 	function withdraw(address _owner, address _recipient, uint256 _amount) public {
 		if (_owner != msg.sender) _spendAllowance(_owner, msg.sender, _amount);
 		_burn(_owner, _amount);
-		(bool success, bytes memory data) = _recipient.call{value: _amount}("");
+		(bool success, bytes memory data) = _recipient.call{value: _amount}(""); // TODO Apply fee
 		require(success, "Failed to send Ether");
 	}
 
