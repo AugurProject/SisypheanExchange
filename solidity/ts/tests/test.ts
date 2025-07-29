@@ -2,7 +2,7 @@ import { describe, beforeEach, test } from 'node:test'
 import { getMockedEthSimulateWindowEthereum, MockWindowEthereum } from '../testsuite/simulator/MockWindowEthereum.js'
 import { createWriteClient } from '../testsuite/simulator/utils/viem.js'
 import { DAY, GENESIS_REPUTATION_TOKEN, NUM_TICKS, TEST_ADDRESSES } from '../testsuite/simulator/utils/constants.js'
-import { approveToken, buyCompleteSets, createGenesisUniverse, createMarket, ensureBugReproDeployed, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getETHBalance, getGenesisUniverse, getMarketData, getMarketShareTokenBalance, getUniverseLegit, initialTokenBalance, isSisypheanExchangeDeployed, one, sellCompleteSets, set, setupTestAccounts, three, two } from '../testsuite/simulator/utils/utilities.js'
+import { approveToken, buyCompleteSets, createGenesisUniverse, createMarket, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getETHBalance, getGenesisUniverse, getMarketData, getMarketShareTokenBalance, getUniverseLegit, initialTokenBalance, isSisypheanExchangeDeployed, sellCompleteSets, setupTestAccounts } from '../testsuite/simulator/utils/utilities.js'
 import assert from 'node:assert'
 import { addressString } from '../testsuite/simulator/utils/bigint.js'
 
@@ -15,20 +15,6 @@ describe('Contract Test Suite', () => {
 	beforeEach(async () => {
 		mockWindow = getMockedEthSimulateWindowEthereum()
 		await setupTestAccounts(mockWindow)
-	})
-
-	test('bugRepro', async () => {
-		const client = createWriteClient(mockWindow, TEST_ADDRESSES[0], 0)
-
-		await ensureBugReproDeployed(client)
-
-		await one(client)
-		await two(client)
-		const result = await three(client)
-		const isSet = await set(client)
-		console.log(isSet)
-		//assert.ok(isSet, "Failed to set")
-		assert.strictEqual(result, 0n, "Failed to zero balance")
 	})
 
 	test('canDeployContract', async () => {
