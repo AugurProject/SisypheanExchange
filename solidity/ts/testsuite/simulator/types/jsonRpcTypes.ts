@@ -1,9 +1,9 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
-import { EthSimulateV1Params } from './ethSimulateTypes.js'
-import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpcSigningTypes.js'
 import { CodeMessageError } from './rpc.js'
+import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpcSigningTypes.js'
+import { EthSimulateV1Params } from './ethSimulateTypes.js'
 
 export type EthGetStorageAtResponse = funtypes.Static<typeof EthGetStorageAtResponse>
 export const EthGetStorageAtResponse = funtypes.Union(
@@ -70,16 +70,16 @@ export const PartialEthereumTransaction = funtypes.ReadonlyPartial({
 	maxFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Null), // etherscan sets this field to null, remove this if etherscan fixes this
 	data: EthereumData,
 	input: EthereumData,
-}).withConstraint((partialEthereumTransaction) => {
-	if (partialEthereumTransaction.input !== undefined && partialEthereumTransaction.data !== undefined) {
-		return areEqualUint8Arrays(partialEthereumTransaction.input, partialEthereumTransaction.data)
+}).withConstraint((PartialEthereumTransaction) => {
+	if (PartialEthereumTransaction.input !== undefined && PartialEthereumTransaction.data !== undefined) {
+		return areEqualUint8Arrays(PartialEthereumTransaction.input, PartialEthereumTransaction.data)
 	}
 	return true
 })
-.withConstraint((partialEthereumTransaction) => {
-	if (partialEthereumTransaction.gasPrice !== undefined) return partialEthereumTransaction.maxPriorityFeePerGas === undefined && partialEthereumTransaction.maxFeePerGas === undefined
-	if (partialEthereumTransaction.maxPriorityFeePerGas !== undefined) return partialEthereumTransaction.maxFeePerGas !== undefined && partialEthereumTransaction.gasPrice === undefined
-	if (partialEthereumTransaction.maxFeePerGas !== undefined) return partialEthereumTransaction.gasPrice === undefined /* && x.maxPriorityFeePerGas !== undefined*/ //Remix doesn't send "maxPriorityFeePerGas" with "maxFeePerGas"
+.withConstraint((x) => {
+	if (x.gasPrice !== undefined) return x.maxPriorityFeePerGas === undefined && x.maxFeePerGas === undefined
+	if (x.maxPriorityFeePerGas !== undefined) return x.maxFeePerGas !== undefined && x.gasPrice === undefined
+	if (x.maxFeePerGas !== undefined) return x.gasPrice === undefined /* && x.maxPriorityFeePerGas !== undefined*/ //Remix doesn't send "maxPriorityFeePerGas" with "maxFeePerGas"
   return true
 })
 
@@ -99,6 +99,17 @@ export const EthTransactionReceiptResponse = funtypes.Union(
 						funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', '2930' as const)),
 						funtypes.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', '1559' as const)),
 					),
+				}),
+				funtypes.ReadonlyObject({
+					type: funtypes.Literal('0x4').withParser(LiteralConverterParserFactory('0x4', '7702' as const)),
+					authorizationList: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+						chainId: EthereumQuantity,
+						address: EthereumAddress,
+						nonce: EthereumQuantity,
+						yParity: funtypes.Union(funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'even' as const)), funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'odd' as const))),
+						r: EthereumQuantity,
+						s: EthereumQuantity
+					}))
 				}),
 				funtypes.ReadonlyObject({
 					type: funtypes.Literal('0x3').withParser(LiteralConverterParserFactory('0x3', '4844' as const)),
@@ -160,7 +171,7 @@ export const TransactionByHashParams = funtypes.ReadonlyObject({
 
 export type SendTransactionParams = funtypes.Static<typeof SendTransactionParams>
 export const SendTransactionParams = funtypes.ReadonlyObject({
-	method: funtypes.Literal('eth_sendTransaction'),
+	method: funtypes.Union(funtypes.Literal('eth_sendTransaction'), funtypes.Literal('wallet_sendTransaction')),
 	params: funtypes.ReadonlyTuple(PartialEthereumTransaction)
 })
 
