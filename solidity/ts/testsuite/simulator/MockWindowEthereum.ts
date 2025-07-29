@@ -122,6 +122,7 @@ export const getMockedEthSimulateWindowEthereum = (): MockWindowEthereum => {
 					const result = ethereumClientService.getChainId()
 					return EthereumQuantity.serialize(result)
 				}
+				case 'wallet_sendTransaction':
 				case 'eth_sendTransaction': {
 					//TODO, only one transaction should be included at once
 					const blockDelta = simulationState?.blocks.length || 0 // always create new block to add transactions to
@@ -129,6 +130,11 @@ export const getMockedEthSimulateWindowEthereum = (): MockWindowEthereum => {
 					if (transaction.success === false) throw new Error(transaction.error?.message)
 					const signed = mockSignTransaction(transaction.transaction)
 					simulationState = await appendTransaction(ethereumClientService, undefined, simulationState, [transaction.transaction], blockDelta)
+					const lastTx = simulationState.blocks.at(-1)?.simulatedTransactions.at(-1)
+					if (lastTx === undefined) throw new Error('Failed To append transaction')
+					if (lastTx.ethSimulateV1CallResult.status === 'failure') {
+						throw new ErrorWithDataAndCode(lastTx.ethSimulateV1CallResult.error.code, lastTx.ethSimulateV1CallResult.error.message, lastTx.ethSimulateV1CallResult.returnData)
+					}
 					return EthereumBytes32.serialize(signed.hash)
 				}
 				case 'eth_blockNumber': {

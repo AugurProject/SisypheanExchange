@@ -11,8 +11,8 @@ const AccountOverride = funtypes.ReadonlyPartial({
 	movePrecompileToAddress: EthereumAddress,
 })
 
-type BlockOverrides = funtypes.Static<typeof BlockOverrides>
-const BlockOverrides = funtypes.Partial({
+export type BlockOverrides = funtypes.Static<typeof BlockOverrides>
+export const BlockOverrides = funtypes.Partial({
     number: EthereumQuantity,
     prevRandao: EthereumBytes32,
     time: EthereumTimestamp,
@@ -21,14 +21,15 @@ const BlockOverrides = funtypes.Partial({
     baseFeePerGas: EthereumQuantity,
 }).asReadonly()
 
-export type BlockCall = funtypes.Static<typeof BlockCall>
-export const BlockCall = funtypes.Partial({
+type BlockCall = funtypes.Static<typeof BlockCall>
+const BlockCall = funtypes.Partial({
 	type: funtypes.Union(
 		funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)),
 		funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, 'legacy' as const)),
 		funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', '2930' as const)),
 		funtypes.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', '1559' as const)),
 		funtypes.Literal('0x3').withParser(LiteralConverterParserFactory('0x3', '4844' as const)),
+		funtypes.Literal('0x4').withParser(LiteralConverterParserFactory('0x4', '7702' as const)),
 	),
 	from: EthereumAddress,
 	nonce: EthereumQuantity,
@@ -40,10 +41,18 @@ export const BlockCall = funtypes.Partial({
 	input: EthereumInput,
 	chainId: EthereumQuantity,
 	accessList: EthereumAccessList,
+	authorizationList: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+		chainId: EthereumQuantity,
+		address: EthereumAddress,
+		nonce: EthereumQuantity,
+	}))
 })
 
 export type StateOverrides = funtypes.Static<typeof StateOverrides>
 export const StateOverrides = funtypes.ReadonlyRecord(funtypes.String, AccountOverride)
+
+export type MutableStateOverrides = funtypes.Static<typeof MutableStateOverrides>
+export const MutableStateOverrides = funtypes.Record(funtypes.String, AccountOverride)
 
 export type BlockCalls = funtypes.Static<typeof BlockCalls>
 export const BlockCalls = funtypes.Intersect(
@@ -56,7 +65,7 @@ export const BlockCalls = funtypes.Intersect(
 	})
 )
 
-export type EthSimulateV1ParamObject = funtypes.Static<typeof EthSimulateV1ParamObject>
+type EthSimulateV1ParamObject = funtypes.Static<typeof EthSimulateV1ParamObject>
 const EthSimulateV1ParamObject = funtypes.ReadonlyObject({
 	blockStateCalls: funtypes.ReadonlyArray(BlockCalls),
 	traceTransfers: funtypes.Boolean,
@@ -81,7 +90,7 @@ const CallResultLog = funtypes.Intersect(
 	EthereumEvent,
 	funtypes.ReadonlyObject({
 		logIndex: EthereumQuantity,
-		blockHash: EthereumBytes32,
+		blockHash: funtypes.Union(EthereumBytes32, funtypes.Null), // Base returns null for this at times
 		blockNumber: EthereumQuantity,
 	}),
 	funtypes.ReadonlyPartial({ // these are not optional in the eth_simulateV1 spec, but they are not standard for logs
@@ -100,7 +109,7 @@ const EthSimulateCallResultFailure = funtypes.ReadonlyObject({
 	  gasUsed: EthereumQuantitySmall,
 	  error: funtypes.ReadonlyObject({
 		  code: funtypes.Number,
-		  message: funtypes.String,
+		  message: funtypes.String
 	  })
 })
 
