@@ -84,6 +84,7 @@ export const formEthSendTransaction = async (ethereumClientService: EthereumClie
 export type MockWindowEthereum = EIP1193Provider & {
 	addStateOverrides: (stateOverrides: StateOverrides) => Promise<void>
 	advanceTime: (amountInSeconds: EthereumQuantity) => Promise<void>
+	getTime: () => Promise<Date>
 }
 export const getMockedEthSimulateWindowEthereum = (): MockWindowEthereum => {
 	const config = getConfig()
@@ -229,6 +230,10 @@ export const getMockedEthSimulateWindowEthereum = (): MockWindowEthereum => {
 				]
 			}
 			simulationState = await createSimulationState(ethereumClientService, undefined, input)
+		},
+		getTime: async () => {
+			if (simulationState === undefined) return new Date()
+			return simulationState.blockTimestamp
 		}
 	}
 }

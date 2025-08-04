@@ -47,9 +47,14 @@ contract ShareToken is ERC1155 {
 	}
 
 	function claimTradingProceeds(IUniverse _universe, uint256 _market, address _owner, address _recipient) external {
-		// TODO require market finalized
-		// TODO burn _owners winning share token balance
-		// TODO send proceeds to recipient
+		require(_owner == msg.sender || isApprovedForAll(_owner, msg.sender) == true, "ERC1155: need operator approval to claim proceeds");
+		uint256 _outcome = _universe.getWinningOutcome(_market);
+		uint256 _tokenId = getTokenId(_market, _outcome);
+
+		uint256 _balance = balanceOf(_owner, _tokenId);
+		_burn(_owner, _tokenId, _balance);
+
+		_universe.withdraw(address(this), _recipient, _balance * Constants.NUM_TICKS);
 	}
 
 	function getMarket(uint256 _tokenId) external pure returns(uint256) {

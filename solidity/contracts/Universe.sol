@@ -16,6 +16,9 @@ contract Universe is ERC20("Cash", "CASH") {
 		uint256 endTime;
 		address designatedReporter;
 		string extraInfo;
+		address initialReporter;
+		uint256 outcome;
+		uint256 reportTime;
 	}
 
 	ISisypheanExchange public sisypheanExchange;
@@ -29,6 +32,8 @@ contract Universe is ERC20("Cash", "CASH") {
 
 	// TODO: Should likely fluctuate. Revist what behavior this should be
 	uint256 constant public REP_BOND = 1 ether;
+	uint256 constant public DESIGNATED_REPORTING_TIME = 1 days;
+	uint256 constant public DISPUTE_PERIOD = 1 days;
 
 	constructor(Universe _parentUniverse, uint256 _parentOutcome) {
 		parentUniverse = _parentUniverse;
@@ -38,7 +43,6 @@ contract Universe is ERC20("Cash", "CASH") {
 		reputationToken = ERC20(Constants.GENESIS_REPUTATION_TOKEN);
 	}
 
-	// TODO: These assume constant 1:1 currently but will not once reporting fee is implemented
 	function deposit(address _recipient) public payable {
 		_mint(_recipient, msg.value);
 	}
@@ -46,7 +50,7 @@ contract Universe is ERC20("Cash", "CASH") {
 	function withdraw(address _owner, address _recipient, uint256 _amount) public {
 		if (_owner != msg.sender) _spendAllowance(_owner, msg.sender, _amount);
 		_burn(_owner, _amount);
-		(bool success, bytes memory data) = _recipient.call{value: _amount}(""); // TODO Apply fee
+		(bool success, bytes memory data) = _recipient.call{value: _amount}("");
 		require(success, "Failed to send Ether");
 	}
 
@@ -60,7 +64,10 @@ contract Universe is ERC20("Cash", "CASH") {
 		markets[_marketId] = MarketData(
 			_endTime,
 			_designatedReporterAddress,
-			_extraInfo
+			_extraInfo,
+			address(0),
+			0,
+			0
 		);
 		return _newMarket;
 	}
@@ -72,5 +79,46 @@ contract Universe is ERC20("Cash", "CASH") {
 		}
 	}
 
-	// TODO: Dispute / Fork logic
+	function reportOutcome(uint256 _marketId, uint256 _outcome) external {
+		MarketData memory marketData = markets[_marketId];
+		require(marketData.reportTime == 0, "Market already has a report");
+		require(children[0] == Universe(address(0)), "Universe has forked");
+		require(_outcome < 3, "Invalid outcome");
+		require(block.timestamp > marketData.endTime, "Market has not ended");
+		require(msg.sender == marketData.designatedReporter || block.timestamp > marketData.endTime + DESIGNATED_REPORTING_TIME, "Reporter must be designated reporter");
+
+		markets[_marketId].initialReporter = msg.sender;
+		markets[_marketId].outcome = _outcome;
+		markets[_marketId].reportTime = block.timestamp;
+	}
+
+	function returnRepBond(uint256 _marketId) external {
+		MarketData memory marketData = markets[_marketId];
+		require(isFinalized(_marketId), "Cannot withdraw REP bond before finalized");
+
+		reputationToken.transfer(marketData.initialReporter, REP_BOND);
+	}
+
+	function isFinalized(uint256 _marketId) public view returns (bool) {
+		MarketData memory marketData = markets[_marketId];
+		return marketData.reportTime != 0 && block.timestamp > marketData.reportTime + DISPUTE_PERIOD;
+	}
+
+	function getWinningOutcome(uint256 _marketId) public view returns (uint256) {
+		MarketData memory marketData = markets[_marketId];
+		require(isFinalized(_marketId), "Market is not finalized");
+
+		return marketData.outcome;
+	}
+
+	function dispute(uint256 _marketId, uint256 _outcome) external {
+		MarketData memory marketData = markets[_marketId];
+		require(block.timestamp < marketData.reportTime + DISPUTE_PERIOD, "Market not in dispute window");
+		require(children[0] == Universe(address(0)), "Universe has forked");
+		require(_outcome < 3, "Invalid outcome");
+
+		reputationToken.transferFrom(msg.sender, address(this), REP_BOND * 2);
+
+		// TODO: fork
+	}
 }

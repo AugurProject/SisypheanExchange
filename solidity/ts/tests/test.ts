@@ -1,20 +1,20 @@
 import { describe, beforeEach, test } from 'node:test'
 import { getMockedEthSimulateWindowEthereum, MockWindowEthereum } from '../testsuite/simulator/MockWindowEthereum.js'
 import { createWriteClient } from '../testsuite/simulator/utils/viem.js'
-import { DAY, GENESIS_REPUTATION_TOKEN, NUM_TICKS, TEST_ADDRESSES } from '../testsuite/simulator/utils/constants.js'
-import { approveToken, buyCompleteSets, createGenesisUniverse, createMarket, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getETHBalance, getGenesisUniverse, getMarketData, getMarketShareTokenBalance, getUniverseLegit, initialTokenBalance, isSisypheanExchangeDeployed, sellCompleteSets, setupTestAccounts } from '../testsuite/simulator/utils/utilities.js'
+import { DAY, GENESIS_REPUTATION_TOKEN, NUM_TICKS, REP_BOND, TEST_ADDRESSES } from '../testsuite/simulator/utils/constants.js'
+import { approveToken, buyCompleteSets, claimTradingProceeds, createGenesisUniverse, createMarket, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getETHBalance, getGenesisUniverse, getMarketData, getMarketShareTokenBalance, getUniverseLegit, initialTokenBalance, isFinalized, isSisypheanExchangeDeployed, reportOutcome, returnRepBond, sellCompleteSets, setupTestAccounts } from '../testsuite/simulator/utils/utilities.js'
 import assert from 'node:assert'
 import { addressString } from '../testsuite/simulator/utils/bigint.js'
-
-const curentTimestamp = BigInt(Math.round(Date.now() / 1000))
 
 describe('Contract Test Suite', () => {
 
 	let mockWindow: MockWindowEthereum
+	let curentTimestamp: bigint
 
 	beforeEach(async () => {
 		mockWindow = getMockedEthSimulateWindowEthereum()
 		await setupTestAccounts(mockWindow)
+		curentTimestamp = BigInt(Math.floor((await mockWindow.getTime()).getTime() / 1000))
 	})
 
 	test('canDeployContract', async () => {
@@ -56,6 +56,9 @@ describe('Contract Test Suite', () => {
 		assert.strictEqual(marketData[0], endTime, 'Market endTime not as expected')
 		assert.strictEqual(marketData[1].toLowerCase(), client.account.address, 'Market designated reporter not as expected')
 		assert.strictEqual(marketData[2], "test", 'Market extraInfo not as expected')
+		assert.strictEqual(marketData[3], addressString(0n), 'Market initial reporter not as expected')
+		assert.strictEqual(marketData[4], 0n, 'Market outcome not as expected')
+		assert.strictEqual(marketData[5], 0n, 'Market report time not as expected')
 	})
 
 	test('canBuyAndSellCompleteSets', async () => {
@@ -90,7 +93,7 @@ describe('Contract Test Suite', () => {
 		assert.strictEqual(shareTokenBalancesAfterBuy[1], amountToBuy, "Shares not credited correctly")
 		assert.strictEqual(shareTokenBalancesAfterBuy[2], amountToBuy, "Shares not credited correctly")
 
-		await sellCompleteSets(client, genesisUniverse, marketId, client.account.address, client.account.address, amountToBuy)
+		await sellCompleteSets(client, genesisUniverse, marketId, client.account.address, client.account.address, amountToBuy) // XXX Failing
 
 		const universeEthBalanceAfterSell = await getETHBalance(client, genesisUniverse)
 		assert.strictEqual(universeEthBalanceAfterSell, 0n, "ETH not returned correctly for selling complete sets")
@@ -99,16 +102,104 @@ describe('Contract Test Suite', () => {
 		assert.strictEqual(shareTokenBalancesAfterSell[0], 0n, "Shares not burned correctly")
 		assert.strictEqual(shareTokenBalancesAfterSell[1], 0n, "Shares not burned correctly")
 		assert.strictEqual(shareTokenBalancesAfterSell[2], 0n, "Shares not burned correctly")
-
-		// TODO: Time based fee testing
 	})
 
-	// Market can resolve and distribute Cash
-		// Time based fee testing
+	test('canResolveMarket', async () => {
+		const client = createWriteClient(mockWindow, TEST_ADDRESSES[0], 0)
+		await ensureSisypheanExchangeDeployed(client)
+		await ensureShareTokenDeployed(client)
+		await createGenesisUniverse(client)
+		const genesisUniverse = await getGenesisUniverse(client)
 
-	// Market can be disputed and resolve
+		await approveToken(client, addressString(GENESIS_REPUTATION_TOKEN), genesisUniverse)
 
-	// Market can be disputed and fork
+		const endTime = curentTimestamp + DAY
+		await createMarket(client, genesisUniverse, endTime, "test")
+
+		const marketId = 1n
+		const amountToBuy = 10n**18n
+		await buyCompleteSets(client, genesisUniverse, marketId, client.account.address, amountToBuy)
+
+		const winningOutcome = 1n
+
+		// We can't report until the market has reached its end time
+		await assert.rejects(reportOutcome(client, genesisUniverse, marketId, winningOutcome))
+
+		await mockWindow.advanceTime(DAY)
+
+		await reportOutcome(client, genesisUniverse, marketId, winningOutcome)
+
+		const isFInalized = await isFinalized(client, genesisUniverse, marketId)
+		assert.ok(!isFInalized, "Market incorrectly recognized as finalized")
+		await assert.rejects(returnRepBond(client, genesisUniverse, marketId))
+		await assert.rejects(claimTradingProceeds(client, genesisUniverse, marketId, client.account.address, client.account.address))
+
+		await mockWindow.advanceTime(DAY + 1n)
+
+		const isFInalizedNow = await isFinalized(client, genesisUniverse, marketId)
+		assert.ok(isFInalizedNow, "Market not recognized as finalized")
+
+		const repBalanceBeforeReturn = await getERC20Balance(client, addressString(GENESIS_REPUTATION_TOKEN), client.account.address)
+		await returnRepBond(client, genesisUniverse, marketId)
+		const repBalanceAfterReturn = await getERC20Balance(client, addressString(GENESIS_REPUTATION_TOKEN), client.account.address)
+		assert.strictEqual(repBalanceAfterReturn, repBalanceBeforeReturn + REP_BOND, "REP bond not returned")
+
+		const otherAccount = addressString(TEST_ADDRESSES[1])
+		const universeEthBalanceBeforeClaim = await getETHBalance(client, genesisUniverse)
+		const winnerEthBalanceBeforeClaim = await getETHBalance(client, otherAccount)
+
+		await claimTradingProceeds(client, genesisUniverse, marketId, client.account.address, otherAccount)
+		const universeEthBalanceAfterClaim = await getETHBalance(client, genesisUniverse)
+		const winnerEthBalanceAfterClaim = await getETHBalance(client, otherAccount)
+
+		assert.strictEqual(universeEthBalanceAfterClaim, universeEthBalanceBeforeClaim - (amountToBuy * NUM_TICKS), "ETH not taken from universe properly from claim trading proceeds call")
+		assert.strictEqual(winnerEthBalanceAfterClaim, winnerEthBalanceBeforeClaim + (amountToBuy * NUM_TICKS), "ETH not claimed properly from claim trading proceeds call")
+	})
+
+	test('canInitialReport', async () => {
+		const client = createWriteClient(mockWindow, TEST_ADDRESSES[0], 0)
+		const otherClient = createWriteClient(mockWindow, TEST_ADDRESSES[1], 0)
+		await ensureSisypheanExchangeDeployed(client)
+		await ensureShareTokenDeployed(client)
+		await createGenesisUniverse(client)
+		const genesisUniverse = await getGenesisUniverse(client)
+
+		await approveToken(client, addressString(GENESIS_REPUTATION_TOKEN), genesisUniverse)
+
+		const endTime = curentTimestamp + DAY
+		await createMarket(client, genesisUniverse, endTime, "test")
+
+		const marketId = 1n
+		const winningOutcome = 1n
+
+		await mockWindow.advanceTime(DAY)
+
+		// We can't report as a non designated reporter until their designated reporting period is over
+		await assert.rejects(reportOutcome(otherClient, genesisUniverse, marketId, winningOutcome))
+
+		await mockWindow.advanceTime(DAY + 1n)
+
+		await reportOutcome(otherClient, genesisUniverse, marketId, winningOutcome)
+
+		// We still need to wait for the market to go without a dispute for the dispute period before it is finalized
+		const isFInalized = await isFinalized(client, genesisUniverse, marketId)
+		assert.ok(!isFInalized, "Market incorrectly recognized as finalized")
+		await assert.rejects(returnRepBond(client, genesisUniverse, marketId))
+
+		await mockWindow.advanceTime(DAY + 1n)
+
+		const isFInalizedNow = await isFinalized(client, genesisUniverse, marketId)
+		assert.ok(isFInalizedNow, "Market not recognized as finalized")
+
+		// The REP bond can now be returned to the initial reporter
+		const repBalanceBeforeReturn = await getERC20Balance(client, addressString(GENESIS_REPUTATION_TOKEN), otherClient.account.address)
+		await returnRepBond(client, genesisUniverse, marketId)
+		const repBalanceAfterReturn = await getERC20Balance(client, addressString(GENESIS_REPUTATION_TOKEN), otherClient.account.address)
+		assert.strictEqual(repBalanceAfterReturn, repBalanceBeforeReturn + REP_BOND, "REP bond not returned")
+	})
+
+	test('canForkMarket', async () => {
+		// Market can be disputed and fork
 		// Cash token forks
 		// All markets fork
 		// Forking market is finalized
@@ -122,4 +213,5 @@ describe('Contract Test Suite', () => {
 			// (B) One fails
 			// (C) Two fail
 			// (D) All fail
+	})
 })

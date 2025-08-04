@@ -339,7 +339,55 @@ export const getMarketData = async (client: ReadClient, universe: Address, marke
 		functionName: 'markets',
 		address: universe,
 		args: [marketId]
-	}) as [bigint, Address, string]
+	}) as [bigint, Address, string, Address, bigint, bigint]
+}
+
+export const reportOutcome = async (client: WriteClient, universe: Address, market: bigint, outcome: bigint) => {
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/Universe.sol'].Universe.abi as Abi,
+		functionName: 'reportOutcome',
+		address: universe,
+		args: [market, outcome]
+	})
+}
+
+export const returnRepBond = async (client: WriteClient, universe: Address, market: bigint) => {
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/Universe.sol'].Universe.abi as Abi,
+		functionName: 'returnRepBond',
+		address: universe,
+		args: [market]
+	})
+}
+
+export const dispute = async (client: WriteClient, universe: Address, market: bigint, outcome: bigint) => {
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/Universe.sol'].Universe.abi as Abi,
+		functionName: 'dispute',
+		address: universe,
+		args: [market, outcome]
+	})
+}
+
+export const isFinalized = async (client: ReadClient, universe: Address, marketId: bigint) => {
+	return await client.readContract({
+		abi: contractsArtifact.contracts['contracts/Universe.sol'].Universe.abi as Abi,
+		functionName: 'isFinalized',
+		address: universe,
+		args: [marketId]
+	}) as boolean
+}
+
+export const getWinningOutcome = async (client: ReadClient, universe: Address, marketId: bigint) => {
+	return await client.readContract({
+		abi: contractsArtifact.contracts['contracts/Universe.sol'].Universe.abi as Abi,
+		functionName: 'getWinningOutcome',
+		address: universe,
+		args: [marketId]
+	}) as bigint
 }
 
 export const buyCompleteSets = async (client: WriteClient, universe: Address, marketId: bigint, account: Address, amount: bigint) => {
@@ -362,6 +410,17 @@ export const sellCompleteSets = async (client: WriteClient, universe: Address, m
 		functionName: 'sellCompleteSets',
 		address: shareTokenAddress,
 		args: [universe, marketId, owner, recipient, amount]
+	})
+}
+
+export const claimTradingProceeds = async (client: WriteClient, universe: Address, marketId: bigint, owner: Address, recipient: Address) => {
+	const shareTokenAddress = await getShareTokenAddress()
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/ShareToken.sol'].ShareToken.abi as Abi,
+		functionName: 'claimTradingProceeds',
+		address: shareTokenAddress,
+		args: [universe, marketId, owner, recipient]
 	})
 }
 
