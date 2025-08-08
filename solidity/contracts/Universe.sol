@@ -5,6 +5,7 @@ import './Reporting.sol';
 import './ERC20.sol';
 import './Constants.sol';
 import './ISisypheanExchange.sol';
+import './ReputationToken.sol';
 
 /**
 * @title Universe
@@ -29,36 +30,38 @@ contract Universe is ERC20("Cash", "CASH") {
 	mapping(uint256 => MarketData) public markets;
 	mapping(uint256 => Universe) public children;
 	uint256 marketIdCounter = 0;
+	bool forked = false;
 
-	// TODO: Should likely fluctuate. Revist what behavior this should be
+	// TODO: Revist what behavior the bond should be
 	uint256 constant public REP_BOND = 1 ether;
+
 	uint256 constant public DESIGNATED_REPORTING_TIME = 1 days;
 	uint256 constant public DISPUTE_PERIOD = 1 days;
 
 	constructor(Universe _parentUniverse, uint256 _parentOutcome) {
+		sisypheanExchange = ISisypheanExchange(msg.sender);
 		parentUniverse = _parentUniverse;
 		parentOutcome = _parentOutcome;
-		universeId = (_parentUniverse == Universe(address(0)) ? 0 : _parentUniverse.universeId() << 4) + _parentOutcome;
-		// TODO: For children this should generate a new REP token
-		reputationToken = ERC20(Constants.GENESIS_REPUTATION_TOKEN);
+		bool isGenesis = _parentUniverse == Universe(address(0));
+		universeId = isGenesis ? 0 : _parentUniverse.universeId() << 4 + _parentOutcome;
+		reputationToken = isGenesis ? ERC20(Constants.GENESIS_REPUTATION_TOKEN) : new ReputationToken();
 	}
 
 	function deposit(address _recipient) public payable {
+		require(!forked, "Universe is forked");
 		_mint(_recipient, msg.value);
 	}
 
 	function withdraw(address _owner, address _recipient, uint256 _amount) public {
+		require(!forked, "Universe is forked");
 		if (_owner != msg.sender) _spendAllowance(_owner, msg.sender, _amount);
 		_burn(_owner, _amount);
 		(bool success, bytes memory data) = _recipient.call{value: _amount}("");
 		require(success, "Failed to send Ether");
 	}
 
-	function createChildUniverse(uint256 _outcome) public returns (Universe) {
-		sisypheanExchange.createChildUniverse(_outcome);
-	}
-
 	function createMarket(uint256 _endTime, address _designatedReporterAddress, string memory _extraInfo) public returns (uint256 _newMarket) {
+		require(!forked, "Universe is forked");
 		reputationToken.transferFrom(msg.sender, address(this), REP_BOND);
 		uint256 _marketId = uint256(bytes32(abi.encodePacked(uint128(universeId), uint128(++marketIdCounter))));
 		markets[_marketId] = MarketData(
@@ -80,6 +83,7 @@ contract Universe is ERC20("Cash", "CASH") {
 	}
 
 	function reportOutcome(uint256 _marketId, uint256 _outcome) external {
+		require(!forked, "Universe is forked");
 		MarketData memory marketData = markets[_marketId];
 		require(marketData.reportTime == 0, "Market already has a report");
 		require(children[0] == Universe(address(0)), "Universe has forked");
@@ -92,6 +96,7 @@ contract Universe is ERC20("Cash", "CASH") {
 		markets[_marketId].reportTime = block.timestamp;
 	}
 
+	// TODO: Handle REP staked in escalation game after fork
 	function returnRepBond(uint256 _marketId) external {
 		MarketData memory marketData = markets[_marketId];
 		require(isFinalized(_marketId), "Cannot withdraw REP bond before finalized");
@@ -112,6 +117,7 @@ contract Universe is ERC20("Cash", "CASH") {
 	}
 
 	function dispute(uint256 _marketId, uint256 _outcome) external {
+		require(!forked, "Universe is forked");
 		MarketData memory marketData = markets[_marketId];
 		require(block.timestamp < marketData.reportTime + DISPUTE_PERIOD, "Market not in dispute window");
 		require(children[0] == Universe(address(0)), "Universe has forked");
@@ -119,6 +125,10 @@ contract Universe is ERC20("Cash", "CASH") {
 
 		reputationToken.transferFrom(msg.sender, address(this), REP_BOND * 2);
 
-		// TODO: fork
+		sisypheanExchange.createChildUniverse(0);
+		sisypheanExchange.createChildUniverse(1);
+		sisypheanExchange.createChildUniverse(0);
+
+		forked = true;
 	}
 }

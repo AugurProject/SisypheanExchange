@@ -2,7 +2,7 @@ import { describe, beforeEach, test } from 'node:test'
 import { getMockedEthSimulateWindowEthereum, MockWindowEthereum } from '../testsuite/simulator/MockWindowEthereum.js'
 import { createWriteClient } from '../testsuite/simulator/utils/viem.js'
 import { DAY, GENESIS_REPUTATION_TOKEN, NUM_TICKS, REP_BOND, TEST_ADDRESSES } from '../testsuite/simulator/utils/constants.js'
-import { approveToken, buyCompleteSets, claimTradingProceeds, createGenesisUniverse, createMarket, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getETHBalance, getGenesisUniverse, getMarketData, getMarketShareTokenBalance, getUniverseLegit, initialTokenBalance, isFinalized, isSisypheanExchangeDeployed, reportOutcome, returnRepBond, sellCompleteSets, setupTestAccounts } from '../testsuite/simulator/utils/utilities.js'
+import { approveToken, buyCompleteSets, claimTradingProceeds, createGenesisUniverse, createMarket, dispute, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getETHBalance, getGenesisUniverse, getMarketData, getMarketShareTokenBalance, getUniverseLegit, initialTokenBalance, isFinalized, isSisypheanExchangeDeployed, reportOutcome, returnRepBond, sellCompleteSets, setupTestAccounts } from '../testsuite/simulator/utils/utilities.js'
 import assert from 'node:assert'
 import { addressString } from '../testsuite/simulator/utils/bigint.js'
 
@@ -199,19 +199,56 @@ describe('Contract Test Suite', () => {
 	})
 
 	test('canForkMarket', async () => {
-		// Market can be disputed and fork
-		// Cash token forks
-		// All markets fork
-		// Forking market is finalized
-		// Other markets return to pre-reporting state
-		// REP migration
-		// Cash migration
-			// Cash migrated proportionally to REP migration
-			// Remaining Cash distributed to REP holders
-		// Cash for REP Auction
-		    // (A) All succeed
-			// (B) One fails
-			// (C) Two fail
-			// (D) All fail
+		const client = createWriteClient(mockWindow, TEST_ADDRESSES[0], 0)
+		const client2 = createWriteClient(mockWindow, TEST_ADDRESSES[1], 0)
+		await ensureSisypheanExchangeDeployed(client)
+		await ensureShareTokenDeployed(client)
+		await createGenesisUniverse(client)
+		const genesisUniverse = await getGenesisUniverse(client)
+
+		await approveToken(client2, addressString(GENESIS_REPUTATION_TOKEN), genesisUniverse)
+		await approveToken(client, addressString(GENESIS_REPUTATION_TOKEN), genesisUniverse)
+
+		const endTime = curentTimestamp + DAY
+		await createMarket(client, genesisUniverse, endTime, "test")
+
+		// create second market and buy complete sets with both users
+
+		const marketId = 1n
+		const amountToBuy = 10n**18n
+		await buyCompleteSets(client, genesisUniverse, marketId, client.account.address, amountToBuy)
+
+		await mockWindow.advanceTime(DAY)
+
+		const initialOutcome = 1n
+		await reportOutcome(client, genesisUniverse, marketId, initialOutcome)
+
+		const disputeOutcome = 2n
+		await dispute(client2, genesisUniverse, marketId, disputeOutcome)
+
+		// Three child universe now exist
+		//   get children
+		//   confirm ids as expected
+
+		// The cash balances for each universe reflect the parent universe balances
+
+		// The market exists in all children universes as well
+
+		// Rep migration to universes
+
+		// End rep migration period
+
+		// Observe that the underlying ETH balances have moved in proportionto REP migration
+
+		// Unmigrated REP may burn their REP for the remaining ETH in the genesis universe
+
+		// Dutch auction in each universe begins to raise ETH for minted REP
+		/*
+		On each universe, a dutch auction is held where people are bidding ETH in exchange for REP.
+		The system starts by offering rep_supply/1,000,000 REP for the needed amount of CASH and the amount of REP offered increases every second until it reaches rep_supply*1,000,000 REP offered.
+		The auction ends when either (A) one or more parties combined are willing to buy the CASH deficit worth of ETH for the current REP price or (B) it reaches the end without enough ETH willing to buy even at the final price.
+		The REP that auction participants receive will be minted and distributed when the auction finalizes. The ETH proceeds of the auction will be added to the CASH contract on the auction's universe.
+		If the auction fails to raise the necessary ETH (B), then the CASH contract's redemption price will be adjusted accordingly. If the auction succeeds at raising enough ETH (A) then the CASH contract's redemption price will remain at its pre-fork value.
+		*/
 	})
 })
