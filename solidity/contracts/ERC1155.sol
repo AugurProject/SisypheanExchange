@@ -31,7 +31,7 @@ contract ERC1155 is IERC1155 {
 		@param id ID of the token
 		@return The account's balance of the token type requested
 	*/
-	function balanceOf(address account, uint256 id) public view returns (uint256) {
+	function balanceOf(address account, uint256 id) public view virtual returns (uint256) {
 		require(account != address(0), "ERC1155: balance query for the zero address");
 		return _balances[id][account];
 	}
@@ -55,6 +55,7 @@ contract ERC1155 is IERC1155 {
 	)
 		public
 		view
+		virtual
 		returns (uint256[] memory)
 	{
 		require(accounts.length == ids.length, "ERC1155: accounts and IDs must have same lengths");
@@ -140,6 +141,7 @@ contract ERC1155 is IERC1155 {
 		uint256 value
 	)
 		internal
+		virtual
 	{
 		_balances[id][from] = _balances[id][from] - value;
 		_balances[id][to] = _balances[id][to] + value;
@@ -196,6 +198,7 @@ contract ERC1155 is IERC1155 {
 		uint256[] memory values
 	)
 		internal
+		virtual
 	{
 		for (uint256 i = 0; i < ids.length; ++i) {
 			uint256 id = ids[i];
@@ -214,7 +217,7 @@ contract ERC1155 is IERC1155 {
 	* @param id ID of the token to be minted
 	* @param value Amount of the token to be minted
 	*/
-	function _mint(address to, uint256 id, uint256 value) internal {
+	function _mint(address to, uint256 id, uint256 value) internal virtual {
 		require(to != address(0), "ERC1155: mint to the zero address");
 
 		_balances[id][to] = _balances[id][to] + value;
@@ -229,7 +232,7 @@ contract ERC1155 is IERC1155 {
 	* @param ids IDs of the tokens to be minted
 	* @param values Amounts of the tokens to be minted
 	*/
-	function _mintBatch(address to, uint256[] memory ids, uint256[] memory values) internal {
+	function _mintBatch(address to, uint256[] memory ids, uint256[] memory values) internal virtual {
 		require(to != address(0), "ERC1155: batch mint to the zero address");
 		require(ids.length == values.length, "ERC1155: minted IDs and values must have same lengths");
 
@@ -247,7 +250,7 @@ contract ERC1155 is IERC1155 {
 	* @param id ID of the token to be burnt
 	* @param value Amount of the token to be burnt
 	*/
-	function _burn(address account, uint256 id, uint256 value) internal {
+	function _burn(address account, uint256 id, uint256 value) internal virtual {
 		require(account != address(0), "ERC1155: attempting to burn tokens on zero account");
 
 		_balances[id][account] = _balances[id][account] - value;
@@ -261,7 +264,7 @@ contract ERC1155 is IERC1155 {
 	* @param ids IDs of the tokens to be burnt
 	* @param values Amounts of the tokens to be burnt
 	*/
-	function _burnBatch(address account, uint256[] memory ids, uint256[] memory values) internal {
+	function _burnBatch(address account, uint256[] memory ids, uint256[] memory values) internal virtual {
 		require(account != address(0), "ERC1155: attempting to burn batch of tokens on zero account");
 		require(ids.length == values.length, "ERC1155: burnt IDs and values must have same lengths");
 

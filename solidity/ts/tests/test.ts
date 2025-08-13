@@ -218,7 +218,13 @@ describe('Contract Test Suite', () => {
 		await dispute(client2, marketId, disputeOutcome)
 
 		// Three child universe now exist
-		// TODO: Test
+		const invalidUniverseData = await getUniverseData(client, 1n)
+		const yesUniverseData = await getUniverseData(client, 2n)
+		const noUniverseData = await getUniverseData(client, 3n)
+
+		assert.notEqual(invalidUniverseData[0], addressString(0n), 'invalid universe not recognized or not initialized properly')
+		assert.notEqual(yesUniverseData[0], addressString(0n), 'yes universe not recognized or not initialized properly')
+		assert.notEqual(noUniverseData[0], addressString(0n), 'no universe not recognized or not initialized properly')
 
 		// The cash balances for each universe reflect the parent universe balances
 

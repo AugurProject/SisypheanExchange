@@ -16,6 +16,7 @@ contract SisypheanExchange is ForkedERC1155 {
 
 	mapping(uint256 => Universe) public universes;
 
+	// TODO Market metadata (non reporting data) should be mapped from base market id seperately with origin universe stored as well
 	struct MarketData {
 		uint256 endTime;
 		address designatedReporter;
@@ -134,8 +135,8 @@ contract SisypheanExchange is ForkedERC1155 {
 
 		universe.reputationToken.transferFrom(msg.sender, address(this), REP_BOND * 2);
 
-		for (uint256 i = 0; i < 3; i++) {
-			uint256 childUniverseId = (_universeId << 4) + _outcome;
+		for (uint256 i = 1; i < 4; i++) {
+			uint256 childUniverseId = (_universeId << 4) + i;
 			universes[childUniverseId] = Universe(
 				new ReputationToken(),
 				0,

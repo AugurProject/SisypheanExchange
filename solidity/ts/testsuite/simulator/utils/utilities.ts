@@ -289,13 +289,13 @@ export const ensureShareTokenDeployed = async (client: WriteClient) => {
 	await client.waitForTransactionReceipt({ hash })
 }
 
-export const getUniverseData = async (client: ReadClient, shadyUniverse: bigint) => {
+export const getUniverseData = async (client: ReadClient, universeId: bigint) => {
 	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
 	return await client.readContract({
 		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
 		functionName: 'universes',
 		address: sisypheanExchangeAddress,
-		args: [shadyUniverse]
+		args: [universeId]
 	}) as [Address, bigint, bigint]
 }
 
