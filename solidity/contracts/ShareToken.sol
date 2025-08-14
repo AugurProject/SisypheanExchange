@@ -16,6 +16,23 @@ contract ShareToken is ForkedERC1155 {
 
 	// CONSIDER: Specify sisEX address on deploy so it doesnt have to be passed everywhere
 
+	function getParentId(uint256 id) internal pure override returns (uint256 _parentId) {
+		// NOTE: this is actually a share token Id but the universe portion of data is stored in the same location in either format and its all we care about here
+		(uint256 _universeId, uint256 _marketAndOutcome) = unpackMarketId(id);
+		_universeId >>= 4;
+		bytes memory _parentIdBytes = abi.encodePacked(uint128(_universeId), uint128(_marketAndOutcome));
+		assembly {
+			_parentId := mload(add(_parentIdBytes, add(0x20, 0)))
+		}
+		return _parentId;
+	}
+
+	function getUniverseId(uint256 id) internal pure override returns (uint256) {
+		// NOTE: this is actually a share token Id but the universe portion of data is stored in the same location in either format and its all we care about here
+		(uint256 _universeId, uint256 _market) = unpackMarketId(id);
+		return _universeId;
+	}
+
 	function buyCompleteSets(ISisypheanExchange _sisypheanExchange, uint256 _marketId, address _account, uint256 _amount) external payable {
 		(uint256 _universeId, uint256 _market) = unpackMarketId(_marketId);
 		uint256 _cost = _amount * Constants.NUM_TICKS;
