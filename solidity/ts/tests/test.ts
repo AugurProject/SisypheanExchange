@@ -230,6 +230,8 @@ describe('Contract Test Suite', () => {
 
 		// The market exists in all children universes as well
 
+		// Share Token balances are available in the forked universes
+
 		// Rep migration to universes
 
 		// End rep migration period

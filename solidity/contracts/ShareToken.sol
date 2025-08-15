@@ -14,23 +14,22 @@ contract ShareToken is ForkedERC1155 {
 	string constant public name = "Shares";
 	string constant public symbol = "SHARE";
 
-	// CONSIDER: Specify sisEX address on deploy so it doesnt have to be passed everywhere
+	// TODO: Specify sisEX address on deploy
 
-	function getParentId(uint256 id) internal pure override returns (uint256 _parentId) {
-		// NOTE: this is actually a share token Id but the universe portion of data is stored in the same location in either format and its all we care about here
-		(uint256 _universeId, uint256 _marketAndOutcome) = unpackMarketId(id);
-		_universeId >>= 4;
-		bytes memory _parentIdBytes = abi.encodePacked(uint128(_universeId), uint128(_marketAndOutcome));
-		assembly {
-			_parentId := mload(add(_parentIdBytes, add(0x20, 0)))
-		}
-		return _parentId;
+	function universeHasForked(uint256 universeId) internal override view returns (bool) {
+		// TODO return sis ex call of fork check
 	}
 
-	function getUniverseId(uint256 id) internal pure override returns (uint256) {
-		// NOTE: this is actually a share token Id but the universe portion of data is stored in the same location in either format and its all we care about here
-		(uint256 _universeId, uint256 _market) = unpackMarketId(id);
-		return _universeId;
+	function getUniverseId(uint256 id) internal override pure returns (uint256 universeId) {
+		assembly {
+			universeId := shr(128, and(id, 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000000000000000000000000000000))
+		}
+	}
+
+	function getChildId(uint256 originalId, uint256 newUniverse) internal override pure returns (uint256 newId) {
+		assembly {
+			newId := or(shr(128, shl(128, originalId)), shl(128, newUniverse))
+		}
 	}
 
 	function buyCompleteSets(ISisypheanExchange _sisypheanExchange, uint256 _marketId, address _account, uint256 _amount) external payable {

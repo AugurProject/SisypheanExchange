@@ -6,4 +6,5 @@ interface ISisypheanExchange {
 	function withdraw(uint256 _universeId, address _owner, address _recipient, uint256 _amount) external;
 	function isFinalized(uint256 _marketId) external view returns (bool);
 	function getWinningOutcome(uint256 _marketId) external view returns (uint256);
+	function forked(uint256 _universeId) external view returns (bool);
 }

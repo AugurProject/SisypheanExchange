@@ -43,6 +43,22 @@ contract SisypheanExchange is ForkedERC1155 {
 		);
 	}
 
+	function forked(uint256 universeId) external view returns (bool) {
+		return universeHasForked(universeId);
+	}
+
+	function universeHasForked(uint256 universeId) internal override view returns (bool) {
+		return universes[universeId].forkingMarket != 0;
+	}
+
+	function getUniverseId(uint256 id) internal override pure returns (uint256) {
+		return id;
+	}
+
+	function getChildId(uint256, uint256 newUniverse) internal override pure returns (uint256) {
+		return newUniverse;
+	}
+
 	function deposit(uint256 _universeId, address _recipient) public payable {
 		Universe memory universe = universes[_universeId];
 		require(universe.forkingMarket == 0, "Universe is forked");
@@ -52,6 +68,7 @@ contract SisypheanExchange is ForkedERC1155 {
 		universes[_universeId] = universe;
 	}
 
+	// TODO: withdraw should be allowed in forked universe for resolved markets. Market resolution should burn the CASH and issue the holder a different balance in some "resolved cash" token
 	function withdraw(uint256 _universeId, address _owner, address _recipient, uint256 _amount) public {
 		Universe memory universe = universes[_universeId];
 		require(universe.forkingMarket == 0, "Universe is forked");
