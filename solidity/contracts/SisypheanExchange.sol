@@ -16,17 +16,24 @@ contract SisypheanExchange is ForkedERC1155 {
 
 	mapping(uint256 => Universe) public universes;
 
-	// TODO Market metadata (non reporting data) should be mapped from base market id seperately with origin universe stored as well
 	struct MarketData {
 		uint256 endTime;
 		address designatedReporter;
 		string extraInfo;
+		uint256 originUniverse;
+	}
+
+	struct MarketResolutionData {
 		address initialReporter;
 		uint256 outcome;
 		uint256 reportTime;
 	}
 
 	mapping(uint256 => MarketData) public markets;
+
+	// UniverseId => MarketId => Data
+	mapping(uint256 => mapping(uint256 => MarketResolutionData)) marketResolutions;
+
 	uint256 marketIdCounter = 0;
 
 	// TODO: Revist what behavior the bond should be
@@ -85,69 +92,62 @@ contract SisypheanExchange is ForkedERC1155 {
 		Universe memory universe = universes[_universeId];
 		require(universe.forkingMarket == 0, "Universe is forked");
 		universe.reputationToken.transferFrom(msg.sender, address(this), REP_BOND);
-		uint256 _marketId = uint256(bytes32(abi.encodePacked(uint128(_universeId), uint128(++marketIdCounter))));
+		uint256 _marketId = ++marketIdCounter;
 		markets[_marketId] = MarketData(
 			_endTime,
 			_designatedReporterAddress,
 			_extraInfo,
-			address(0),
-			0,
-			0
+			_universeId
 		);
 		return _newMarket;
 	}
 
-	function unpackMarketId(uint256 _marketId) internal pure returns (uint256 _universe, uint256 _market) {
-		assembly {
-			_universe := shr(128, and(_marketId, 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000000000000000000000000000000))
-			_market := and(_marketId, 0x00000000000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF)
-		}
-	}
-
-	function reportOutcome(uint256 _marketId, uint256 _outcome) external {
-		(uint256 _universeId, uint256 _market) = unpackMarketId(_marketId);
+	function reportOutcome(uint256 _universeId, uint256 _marketId, uint256 _outcome) external {
 		Universe memory universe = universes[_universeId];
 		require(universe.forkingMarket == 0, "Universe is forked");
 		MarketData memory marketData = markets[_marketId];
-		require(marketData.reportTime == 0, "Market already has a report");
+		MarketResolutionData memory marketResolutionData = marketResolutions[_universeId][_marketId];
+		require(marketResolutionData.reportTime == 0, "Market already has a report");
 		require(_outcome < 3, "Invalid outcome");
 		require(block.timestamp > marketData.endTime, "Market has not ended");
 		require(msg.sender == marketData.designatedReporter || block.timestamp > marketData.endTime + DESIGNATED_REPORTING_TIME, "Reporter must be designated reporter");
 
-		markets[_marketId].initialReporter = msg.sender;
-		markets[_marketId].outcome = _outcome;
-		markets[_marketId].reportTime = block.timestamp;
+		marketResolutions[_universeId][_marketId].initialReporter = msg.sender;
+		marketResolutions[_universeId][_marketId].outcome = _outcome;
+		marketResolutions[_universeId][_marketId].reportTime = block.timestamp;
 	}
 
 	// TODO: Handle REP staked in escalation game after fork
-	function returnRepBond(uint256 _marketId) external {
-		(uint256 _universeId, uint256 _market) = unpackMarketId(_marketId);
+	function returnRepBond(uint256 _universeId, uint256 _marketId) external {
 		Universe memory universe = universes[_universeId];
-		MarketData memory marketData = markets[_marketId];
-		require(isFinalized(_marketId), "Cannot withdraw REP bond before finalized");
+		MarketResolutionData memory marketResolutionData = marketResolutions[_universeId][_marketId];
+		require(marketResolutionDataIsFinalized(marketResolutionData), "Cannot withdraw REP bond before finalized");
 
-		universe.reputationToken.transfer(marketData.initialReporter, REP_BOND);
+		universe.reputationToken.transfer(marketResolutionData.initialReporter, REP_BOND);
 	}
 
-	function isFinalized(uint256 _marketId) public view returns (bool) {
-		MarketData memory marketData = markets[_marketId];
-		return marketData.reportTime != 0 && block.timestamp > marketData.reportTime + DISPUTE_PERIOD;
+	function isFinalized(uint256 _universeId, uint256 _marketId) external view returns (bool) {
+		MarketResolutionData memory marketResolutionData = marketResolutions[_universeId][_marketId];
+		return marketResolutionDataIsFinalized(marketResolutionData);
 	}
 
-	function getWinningOutcome(uint256 _marketId) public view returns (uint256) {
-		MarketData memory marketData = markets[_marketId];
-		require(isFinalized(_marketId), "Market is not finalized");
+	function marketResolutionDataIsFinalized(MarketResolutionData memory marketResolutionData) internal view returns (bool) {
+		return marketResolutionData.reportTime != 0 && block.timestamp > marketResolutionData.reportTime + DISPUTE_PERIOD;
+	}
 
-		return marketData.outcome;
+	function getWinningOutcome(uint256 _universeId, uint256 _marketId) public view returns (uint256) {
+		MarketResolutionData memory marketResolutionData = marketResolutions[_universeId][_marketId];
+		require(marketResolutionDataIsFinalized(marketResolutionData), "Market is not finalized");
+
+		return marketResolutionData.outcome;
 	}
 
 	// TODO: Currently escalation game is a single dispute. Likely will be more complex.
-	function dispute(uint256 _marketId, uint256 _outcome) external {
-		(uint256 _universeId, uint256 _market) = unpackMarketId(_marketId);
+	function dispute(uint256 _universeId, uint256 _marketId, uint256 _outcome) external {
 		Universe memory universe = universes[_universeId];
 		require(universe.forkingMarket == 0, "Universe is forked");
-		MarketData memory marketData = markets[_marketId];
-		require(block.timestamp < marketData.reportTime + DISPUTE_PERIOD, "Market not in dispute window");
+		MarketResolutionData memory marketResolutionData = marketResolutions[_universeId][_marketId];
+		require(block.timestamp < marketResolutionData.reportTime + DISPUTE_PERIOD, "Market not in dispute window");
 		require(_outcome < 3, "Invalid outcome");
 
 		universe.reputationToken.transferFrom(msg.sender, address(this), REP_BOND * 2);
@@ -160,6 +160,8 @@ contract SisypheanExchange is ForkedERC1155 {
 				0
 			);
 		}
+
+		// TODO resolve each in respective universe
 
 		universe.forkingMarket = _marketId;
 		universes[_universeId] = universe;

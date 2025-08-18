@@ -47,9 +47,7 @@ describe('Contract Test Suite', () => {
 		assert.strictEqual(marketData[0], endTime, 'Market endTime not as expected')
 		assert.strictEqual(marketData[1].toLowerCase(), client.account.address, 'Market designated reporter not as expected')
 		assert.strictEqual(marketData[2], "test", 'Market extraInfo not as expected')
-		assert.strictEqual(marketData[3], addressString(0n), 'Market initial reporter not as expected')
-		assert.strictEqual(marketData[4], 0n, 'Market outcome not as expected')
-		assert.strictEqual(marketData[5], 0n, 'Market report time not as expected')
+		assert.strictEqual(marketData[3], genesisUniverse, 'Market origin universe not as expected')
 	})
 
 	test('canBuyAndSellCompleteSets', async () => {
@@ -66,7 +64,7 @@ describe('Contract Test Suite', () => {
 
 		const marketId = 1n
 
-		const shareTokenBalancesBeforeBuy = await getMarketShareTokenBalance(client, marketId, client.account.address)
+		const shareTokenBalancesBeforeBuy = await getMarketShareTokenBalance(client, genesisUniverse, marketId, client.account.address)
 		assert.strictEqual(shareTokenBalancesBeforeBuy[0], 0n, "Initial share balance not 0")
 		assert.strictEqual(shareTokenBalancesBeforeBuy[1], 0n, "Initial share balance not 0")
 		assert.strictEqual(shareTokenBalancesBeforeBuy[2], 0n, "Initial share balance not 0")
@@ -74,22 +72,22 @@ describe('Contract Test Suite', () => {
 		const amountToBuy = 1000n
 		const costToBuy = amountToBuy * NUM_TICKS
 
-		await buyCompleteSets(client, marketId, client.account.address, amountToBuy)
+		await buyCompleteSets(client, genesisUniverse, marketId, client.account.address, amountToBuy)
 
 		const universeEthBalanceAfterBuy = await getETHBalance(client, sisEx)
 		assert.strictEqual(universeEthBalanceAfterBuy, costToBuy, "ETH not paid correctly for buying complete sets")
 
-		const shareTokenBalancesAfterBuy = await getMarketShareTokenBalance(client, marketId, client.account.address)
+		const shareTokenBalancesAfterBuy = await getMarketShareTokenBalance(client, genesisUniverse, marketId, client.account.address)
 		assert.strictEqual(shareTokenBalancesAfterBuy[0], amountToBuy, "Shares not credited correctly")
 		assert.strictEqual(shareTokenBalancesAfterBuy[1], amountToBuy, "Shares not credited correctly")
 		assert.strictEqual(shareTokenBalancesAfterBuy[2], amountToBuy, "Shares not credited correctly")
 
-		await sellCompleteSets(client, marketId, client.account.address, client.account.address, amountToBuy)
+		await sellCompleteSets(client, genesisUniverse, marketId, client.account.address, client.account.address, amountToBuy)
 
 		const universeEthBalanceAfterSell = await getETHBalance(client, sisEx)
 		assert.strictEqual(universeEthBalanceAfterSell, 0n, "ETH not returned correctly for selling complete sets")
 
-		const shareTokenBalancesAfterSell = await getMarketShareTokenBalance(client, marketId, client.account.address)
+		const shareTokenBalancesAfterSell = await getMarketShareTokenBalance(client, genesisUniverse, marketId, client.account.address)
 		assert.strictEqual(shareTokenBalancesAfterSell[0], 0n, "Shares not burned correctly")
 		assert.strictEqual(shareTokenBalancesAfterSell[1], 0n, "Shares not burned correctly")
 		assert.strictEqual(shareTokenBalancesAfterSell[2], 0n, "Shares not burned correctly")
@@ -109,29 +107,29 @@ describe('Contract Test Suite', () => {
 
 		const marketId = 1n
 		const amountToBuy = 10n**18n
-		await buyCompleteSets(client, marketId, client.account.address, amountToBuy)
+		await buyCompleteSets(client, genesisUniverse, marketId, client.account.address, amountToBuy)
 
 		const winningOutcome = 1n
 
 		// We can't report until the market has reached its end time
-		await assert.rejects(reportOutcome(client, marketId, winningOutcome))
+		await assert.rejects(reportOutcome(client, genesisUniverse, marketId, winningOutcome))
 
 		await mockWindow.advanceTime(DAY)
 
-		await reportOutcome(client, marketId, winningOutcome)
+		await reportOutcome(client, genesisUniverse, marketId, winningOutcome)
 
-		const isFInalized = await isFinalized(client, marketId)
+		const isFInalized = await isFinalized(client, genesisUniverse, marketId)
 		assert.ok(!isFInalized, "Market incorrectly recognized as finalized")
-		await assert.rejects(returnRepBond(client, marketId))
-		await assert.rejects(claimTradingProceeds(client, marketId, client.account.address, client.account.address))
+		await assert.rejects(returnRepBond(client, genesisUniverse, marketId))
+		await assert.rejects(claimTradingProceeds(client, genesisUniverse, marketId, client.account.address, client.account.address))
 
 		await mockWindow.advanceTime(DAY + 1n)
 
-		const isFInalizedNow = await isFinalized(client, marketId)
+		const isFInalizedNow = await isFinalized(client, genesisUniverse, marketId)
 		assert.ok(isFInalizedNow, "Market not recognized as finalized")
 
 		const repBalanceBeforeReturn = await getERC20Balance(client, addressString(GENESIS_REPUTATION_TOKEN), client.account.address)
-		await returnRepBond(client, marketId)
+		await returnRepBond(client, genesisUniverse, marketId)
 		const repBalanceAfterReturn = await getERC20Balance(client, addressString(GENESIS_REPUTATION_TOKEN), client.account.address)
 		assert.strictEqual(repBalanceAfterReturn, repBalanceBeforeReturn + REP_BOND, "REP bond not returned")
 
@@ -139,7 +137,7 @@ describe('Contract Test Suite', () => {
 		const universeEthBalanceBeforeClaim = await getETHBalance(client, sisEx)
 		const winnerEthBalanceBeforeClaim = await getETHBalance(client, otherAccount)
 
-		await claimTradingProceeds(client, marketId, client.account.address, otherAccount)
+		await claimTradingProceeds(client, genesisUniverse, marketId, client.account.address, otherAccount)
 		const universeEthBalanceAfterClaim = await getETHBalance(client, sisEx)
 		const winnerEthBalanceAfterClaim = await getETHBalance(client, otherAccount)
 
@@ -166,25 +164,25 @@ describe('Contract Test Suite', () => {
 		await mockWindow.advanceTime(DAY)
 
 		// We can't report as a non designated reporter until their designated reporting period is over
-		await assert.rejects(reportOutcome(otherClient, marketId, winningOutcome))
+		await assert.rejects(reportOutcome(otherClient, genesisUniverse, marketId, winningOutcome))
 
 		await mockWindow.advanceTime(DAY + 1n)
 
-		await reportOutcome(otherClient, marketId, winningOutcome)
+		await reportOutcome(otherClient, genesisUniverse, marketId, winningOutcome)
 
 		// We still need to wait for the market to go without a dispute for the dispute period before it is finalized
-		const isFInalized = await isFinalized(client, marketId)
+		const isFInalized = await isFinalized(client, genesisUniverse, marketId)
 		assert.ok(!isFInalized, "Market incorrectly recognized as finalized")
-		await assert.rejects(returnRepBond(client, marketId))
+		await assert.rejects(returnRepBond(client, genesisUniverse, marketId))
 
 		await mockWindow.advanceTime(DAY + 1n)
 
-		const isFInalizedNow = await isFinalized(client, marketId)
+		const isFInalizedNow = await isFinalized(client, genesisUniverse, marketId)
 		assert.ok(isFInalizedNow, "Market not recognized as finalized")
 
 		// The REP bond can now be returned to the initial reporter
 		const repBalanceBeforeReturn = await getERC20Balance(client, addressString(GENESIS_REPUTATION_TOKEN), otherClient.account.address)
-		await returnRepBond(client, marketId)
+		await returnRepBond(client, genesisUniverse, marketId)
 		const repBalanceAfterReturn = await getERC20Balance(client, addressString(GENESIS_REPUTATION_TOKEN), otherClient.account.address)
 		assert.strictEqual(repBalanceAfterReturn, repBalanceBeforeReturn + REP_BOND, "REP bond not returned")
 	})
@@ -207,15 +205,15 @@ describe('Contract Test Suite', () => {
 
 		const marketId = 1n
 		const amountToBuy = 10n**18n
-		await buyCompleteSets(client, marketId, client.account.address, amountToBuy)
+		await buyCompleteSets(client, genesisUniverse, marketId, client.account.address, amountToBuy)
 
 		await mockWindow.advanceTime(DAY)
 
 		const initialOutcome = 1n
-		await reportOutcome(client, marketId, initialOutcome)
+		await reportOutcome(client, genesisUniverse, marketId, initialOutcome)
 
 		const disputeOutcome = 2n
-		await dispute(client2, marketId, disputeOutcome)
+		await dispute(client2, genesisUniverse, marketId, disputeOutcome)
 
 		// Three child universe now exist
 		const invalidUniverseData = await getUniverseData(client, 1n)
@@ -225,6 +223,8 @@ describe('Contract Test Suite', () => {
 		assert.notEqual(invalidUniverseData[0], addressString(0n), 'invalid universe not recognized or not initialized properly')
 		assert.notEqual(yesUniverseData[0], addressString(0n), 'yes universe not recognized or not initialized properly')
 		assert.notEqual(noUniverseData[0], addressString(0n), 'no universe not recognized or not initialized properly')
+
+		// Cash / share Migration
 
 		// The cash balances for each universe reflect the parent universe balances
 
