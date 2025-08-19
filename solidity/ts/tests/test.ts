@@ -2,7 +2,7 @@ import { describe, beforeEach, test } from 'node:test'
 import { getMockedEthSimulateWindowEthereum, MockWindowEthereum } from '../testsuite/simulator/MockWindowEthereum.js'
 import { createWriteClient } from '../testsuite/simulator/utils/viem.js'
 import { DAY, GENESIS_REPUTATION_TOKEN, NUM_TICKS, REP_BOND, TEST_ADDRESSES } from '../testsuite/simulator/utils/constants.js'
-import { approveToken, buyCompleteSets, claimTradingProceeds, createMarket, dispute, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getETHBalance, getMarketData, getMarketShareTokenBalance, getSisypheanExchangeAddress, getUniverseData, initialTokenBalance, isFinalized, isSisypheanExchangeDeployed, reportOutcome, returnRepBond, sellCompleteSets, setupTestAccounts } from '../testsuite/simulator/utils/utilities.js'
+import { approveToken, buyCompleteSets, claimTradingProceeds, createMarket, dispute, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getETHBalance, getMarketData, getMarketShareTokenBalance, getShareTokenCashBalance, getSisypheanExchangeAddress, getTokenId, getUniverseData, initialTokenBalance, isFinalized, isSisypheanExchangeDeployed, migrateCash, migrateShareToken, reportOutcome, returnRepBond, sellCompleteSets, setupTestAccounts } from '../testsuite/simulator/utils/utilities.js'
 import assert from 'node:assert'
 import { addressString } from '../testsuite/simulator/utils/bigint.js'
 
@@ -201,11 +201,20 @@ describe('Contract Test Suite', () => {
 		const endTime = curentTimestamp + DAY
 		await createMarket(client, genesisUniverse, endTime, "test")
 
-		// create second market and buy complete sets with both users
-
 		const marketId = 1n
 		const amountToBuy = 10n**18n
 		await buyCompleteSets(client, genesisUniverse, marketId, client.account.address, amountToBuy)
+		const client1ForkedMarkethareTokenBalances = await getMarketShareTokenBalance(client, genesisUniverse, marketId, client.account.address)
+
+		// We'll create a second market and buy complete sets with both users as well
+		const endTime2 = curentTimestamp + (DAY * 30n)
+		await createMarket(client, genesisUniverse, endTime2, "test 2")
+
+		const marketId2 = 2n
+		await buyCompleteSets(client, genesisUniverse, marketId2, client.account.address, amountToBuy)
+		await buyCompleteSets(client2, genesisUniverse, marketId2, client2.account.address, amountToBuy)
+		const client1NormalMarkethareTokenBalances = await getMarketShareTokenBalance(client, genesisUniverse, marketId2, client.account.address)
+		const client2NormalMarkethareTokenBalances = await getMarketShareTokenBalance(client2, genesisUniverse, marketId2, client.account.address)
 
 		await mockWindow.advanceTime(DAY)
 
@@ -216,27 +225,70 @@ describe('Contract Test Suite', () => {
 		await dispute(client2, genesisUniverse, marketId, disputeOutcome)
 
 		// Three child universe now exist
-		const invalidUniverseData = await getUniverseData(client, 1n)
-		const yesUniverseData = await getUniverseData(client, 2n)
-		const noUniverseData = await getUniverseData(client, 3n)
+		const invalidUniverseId = 1n
+		const yesUniverseId = 2n
+		const noUniverseId = 3n
+		const invalidUniverseData = await getUniverseData(client, invalidUniverseId)
+		const yesUniverseData = await getUniverseData(client, yesUniverseId)
+		const noUniverseData = await getUniverseData(client, noUniverseId)
 
 		assert.notEqual(invalidUniverseData[0], addressString(0n), 'invalid universe not recognized or not initialized properly')
 		assert.notEqual(yesUniverseData[0], addressString(0n), 'yes universe not recognized or not initialized properly')
 		assert.notEqual(noUniverseData[0], addressString(0n), 'no universe not recognized or not initialized properly')
 
-		// Cash / share Migration
+		// Initially Cash and share balances in the child universes are 0 and the fored universe still holds the same balance
+		const shareTokenCashInGenesis = await getShareTokenCashBalance(client, genesisUniverse)
+		const shareTokenCashInInvalid = await getShareTokenCashBalance(client, invalidUniverseId)
+		const shareTokenCashInYes = await getShareTokenCashBalance(client, yesUniverseId)
+		const shareTokenCashInNo = await getShareTokenCashBalance(client, noUniverseId)
 
-		// The cash balances for each universe reflect the parent universe balances
+		const totalSetCosts = amountToBuy * 3n * NUM_TICKS
+		assert.strictEqual(shareTokenCashInGenesis, totalSetCosts, "Cash balance of Genesis Universe not as expected")
+		assert.strictEqual(shareTokenCashInInvalid, 0n, "Invalid universe cash not as expected")
+		assert.strictEqual(shareTokenCashInYes, 0n, "Yes universe cash not as expected")
+		assert.strictEqual(shareTokenCashInNo, 0n, "No universe cash not as expected")
 
-		// The market exists in all children universes as well
+		// We can trigger a migration of the Share Token contracts cash to handle that balance
+		await migrateCash(client, genesisUniverse)
 
-		// Share Token balances are available in the forked universes
+		const shareTokenCashInGenesisAfterMigrateCash = await getShareTokenCashBalance(client, genesisUniverse)
+		const shareTokenCashInInvalidAfterMigrateCash = await getShareTokenCashBalance(client, invalidUniverseId)
+		const shareTokenCashInYesAfterMigrateCash = await getShareTokenCashBalance(client, yesUniverseId)
+		const shareTokenCashInNoAfterMigrateCash = await getShareTokenCashBalance(client, noUniverseId)
+
+		assert.strictEqual(shareTokenCashInGenesisAfterMigrateCash, 0n, "Cash balance of Genesis Universe not as expected")
+		assert.strictEqual(shareTokenCashInInvalidAfterMigrateCash, totalSetCosts, "Invalid universe cash not as expected")
+		assert.strictEqual(shareTokenCashInYesAfterMigrateCash, totalSetCosts, "Yes universe cash not as expected")
+		assert.strictEqual(shareTokenCashInNoAfterMigrateCash, totalSetCosts, "No universe cash not as expected")
+
+		// The Share Token balances have the same process requiring migration, but will be needed for each user, and for each outcome they wish to migrate
+		const client1ForkedMarkethareTokenBalancesAfterFork = await getMarketShareTokenBalance(client, genesisUniverse, marketId, client.account.address)
+		const client1NormalMarkethareTokenBalancesAfterFork = await getMarketShareTokenBalance(client, genesisUniverse, marketId2, client.account.address)
+		const client2NormalMarkethareTokenBalancesAfterFork = await getMarketShareTokenBalance(client2, genesisUniverse, marketId2, client.account.address)
+
+		assert.deepEqual(client1ForkedMarkethareTokenBalancesAfterFork, client1ForkedMarkethareTokenBalances, "Forked market shares not as expected right after fork")
+		assert.deepEqual(client1NormalMarkethareTokenBalancesAfterFork, client1NormalMarkethareTokenBalances, "Client 1 normal market shares not as expected right after fork")
+		assert.deepEqual(client2NormalMarkethareTokenBalancesAfterFork, client2NormalMarkethareTokenBalances, "Client 2 normal market shares not as expected right after fork")
+
+		const forkedMarketInvalidId = await getTokenId(client, genesisUniverse, marketId, 0n)
+		await migrateShareToken(client, forkedMarketInvalidId)
+
+		const client1ForkedMarketShareTokenBalancesAfterInvalidMigration = await getMarketShareTokenBalance(client, genesisUniverse, marketId, client.account.address)
+		assert.strictEqual(client1ForkedMarketShareTokenBalancesAfterInvalidMigration[0], 0n, "Invalid Shares not 0 in genesis universe after migration")
+
+		const client1ForkedMarketShareTokenBalancesInInvalidUniverseAfterInvalidMigration = await getMarketShareTokenBalance(client, invalidUniverseId, marketId, client.account.address)
+		const client1ForkedMarketShareTokenBalancesInYesUniverseAfterInvalidMigration = await getMarketShareTokenBalance(client, yesUniverseId, marketId, client.account.address)
+		const client1ForkedMarketShareTokenBalancesInNoUniverseAfterInvalidMigration = await getMarketShareTokenBalance(client, noUniverseId, marketId, client.account.address)
+
+		assert.strictEqual(client1ForkedMarketShareTokenBalancesInInvalidUniverseAfterInvalidMigration[0], amountToBuy, "Invalid Shares not migrated to invalid universe after migration")
+		assert.strictEqual(client1ForkedMarketShareTokenBalancesInYesUniverseAfterInvalidMigration[0], amountToBuy, "Invalid Shares not migrated to yes universe after migration")
+		assert.strictEqual(client1ForkedMarketShareTokenBalancesInNoUniverseAfterInvalidMigration[0], amountToBuy, "Invalid Shares not migrated to no universe after migration")
 
 		// Rep migration to universes
 
 		// End rep migration period
 
-		// Observe that the underlying ETH balances have moved in proportionto REP migration
+		// Observe that the underlying ETH balances have moved in proportion to REP migration
 
 		// Unmigrated REP may burn their REP for the remaining ETH in the genesis universe
 

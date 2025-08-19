@@ -66,6 +66,8 @@ contract SisypheanExchange is ForkedERC1155 {
 		return newUniverse;
 	}
 
+	// TODO: function to check market legitimacy in a universe. Should be required for initial reporting at minimum
+
 	function deposit(uint256 _universeId, address _recipient) public payable {
 		Universe memory universe = universes[_universeId];
 		require(universe.forkingMarket == 0, "Universe is forked");
