@@ -2,7 +2,7 @@ import { describe, beforeEach, test } from 'node:test'
 import { getMockedEthSimulateWindowEthereum, MockWindowEthereum } from '../testsuite/simulator/MockWindowEthereum.js'
 import { createWriteClient } from '../testsuite/simulator/utils/viem.js'
 import { DAY, GENESIS_REPUTATION_TOKEN, NUM_TICKS, REP_BOND, TEST_ADDRESSES } from '../testsuite/simulator/utils/constants.js'
-import { approveToken, buyCompleteSets, claimTradingProceeds, createMarket, dispute, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getETHBalance, getMarketData, getMarketShareTokenBalance, getShareTokenCashBalance, getSisypheanExchangeAddress, getTokenId, getUniverseData, initialTokenBalance, isFinalized, isSisypheanExchangeDeployed, migrateCash, migrateShareToken, reportOutcome, returnRepBond, sellCompleteSets, setupTestAccounts } from '../testsuite/simulator/utils/utilities.js'
+import { approveToken, buyCompleteSets, cashInREP, claimTradingProceeds, createMarket, dispute, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getERC20Supply, getETHBalance, getMarketData, getMarketShareTokenBalance, getShareTokenCashBalance, getSisypheanExchangeAddress, getTokenId, getUniverseData, initialTokenBalance, isFinalized, isSisypheanExchangeDeployed, migrateCash, migrateREP, migrateShareToken, reportOutcome, returnRepBond, sellCompleteSets, setupTestAccounts } from '../testsuite/simulator/utils/utilities.js'
 import assert from 'node:assert'
 import { addressString } from '../testsuite/simulator/utils/bigint.js'
 
@@ -284,13 +284,46 @@ describe('Contract Test Suite', () => {
 		assert.strictEqual(client1ForkedMarketShareTokenBalancesInYesUniverseAfterInvalidMigration[0], amountToBuy, "Invalid Shares not migrated to yes universe after migration")
 		assert.strictEqual(client1ForkedMarketShareTokenBalancesInNoUniverseAfterInvalidMigration[0], amountToBuy, "Invalid Shares not migrated to no universe after migration")
 
-		// Rep migration to universes
+		// get REP total supply - REP balance of NULL address
+		const repSupply = await getERC20Supply(client, addressString(GENESIS_REPUTATION_TOKEN))
+		const repBurned = await getERC20Balance(client, addressString(GENESIS_REPUTATION_TOKEN), addressString(1n))
+		const totalREP = repSupply - repBurned;
+
+		// get ETH balance of genesis and NO child universe
+		const genesisETHBalance = (await getUniverseData(client, genesisUniverse))[2]
+		const noUniverseETHBalance = (await getUniverseData(client, noUniverseId))[2]
+		assert.strictEqual(noUniverseETHBalance, 0n, "NO universe ETH balance not initially 0")
+
+		// migrate REP from client 1 to NO universe
+		const client1REPBalance = await getERC20Balance(client, addressString(GENESIS_REPUTATION_TOKEN), client.account.address)
+		const repMigrationAmount = client1REPBalance / 2n;
+		await migrateREP(client, genesisUniverse, repMigrationAmount, 2n)
+
+		const repBurnedAfterMigration = await getERC20Balance(client, addressString(GENESIS_REPUTATION_TOKEN), addressString(1n))
+		assert.strictEqual(repBurnedAfterMigration, repBurned + repMigrationAmount, "REP not sent to burn address during migration")
+
+		// check eth balance of genesis and NO child universe
+		const genesisETHBalanceAfterMigration = (await getUniverseData(client, genesisUniverse))[2]
+		const noUniverseETHBalanceAfterMigration = (await getUniverseData(client, noUniverseId))[2]
+
+		const correspondingETH = repMigrationAmount * genesisETHBalance / totalREP;
+		const expectedGenesisETHBalance = genesisETHBalance - correspondingETH
+		assert.strictEqual(genesisETHBalanceAfterMigration, expectedGenesisETHBalance, "Genesis ETH balance not as expected after REP migration")
+		assert.strictEqual(noUniverseETHBalanceAfterMigration, correspondingETH, "N) universe ETH balance not as expected after REP migration")
 
 		// End rep migration period
+		await mockWindow.advanceTime(7n * DAY + 1n)
 
-		// Observe that the underlying ETH balances have moved in proportion to REP migration
+		// Client 1 burns remaining REP for corresponding ETH
+		const repBalanceAfterMigration = await getERC20Balance(client, addressString(GENESIS_REPUTATION_TOKEN), client.account.address)
+		const repSupplyAfterMigration = totalREP - repBurnedAfterMigration
+		const expectedETHPayout = repBalanceAfterMigration * genesisETHBalanceAfterMigration / repSupplyAfterMigration
 
-		// Unmigrated REP may burn their REP for the remaining ETH in the genesis universe
+		await cashInREP(client, genesisUniverse)
+
+		const genesisETHBalanceAfterREPCashIn = (await getUniverseData(client, genesisUniverse))[2]
+		const expectedGenesisETHBalanceAfterREPCashIn = genesisETHBalanceAfterMigration - expectedETHPayout
+		assert.strictEqual(genesisETHBalanceAfterREPCashIn, expectedGenesisETHBalanceAfterREPCashIn, "Genesis ETH balance not as expected after REP cash in")
 
 		// Dutch auction in each universe begins to raise ETH for minted REP
 		/*

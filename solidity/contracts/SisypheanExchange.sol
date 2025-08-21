@@ -5,13 +5,15 @@ import './ForkedERC1155.sol';
 import './Constants.sol';
 import './ISisypheanExchange.sol';
 import './ReputationToken.sol';
+import './IERC20.sol';
 
 contract SisypheanExchange is ForkedERC1155 {
 
 	struct Universe {
-		ERC20 reputationToken;
+		IERC20 reputationToken;
 		uint256 forkingMarket;
 		uint256 ethBalance;
+		uint256 forkTime;
 	}
 
 	mapping(uint256 => Universe) public universes;
@@ -41,10 +43,13 @@ contract SisypheanExchange is ForkedERC1155 {
 
 	uint256 constant public DESIGNATED_REPORTING_TIME = 1 days;
 	uint256 constant public DISPUTE_PERIOD = 1 days;
+	uint256 constant public REP_MIGRATION_WINDOW = 7 days;
+	uint256 constant public AUCTION_DURATION = 7 days;
 
 	constructor() {
 		universes[0] = Universe(
-			ERC20(Constants.GENESIS_REPUTATION_TOKEN),
+			IERC20(Constants.GENESIS_REPUTATION_TOKEN),
+			0,
 			0,
 			0
 		);
@@ -159,6 +164,7 @@ contract SisypheanExchange is ForkedERC1155 {
 			universes[childUniverseId] = Universe(
 				new ReputationToken(),
 				0,
+				0,
 				0
 			);
 		}
@@ -166,6 +172,54 @@ contract SisypheanExchange is ForkedERC1155 {
 		// TODO resolve each in respective universe
 
 		universe.forkingMarket = _marketId;
+		universe.forkTime = block.timestamp;
 		universes[_universeId] = universe;
+	}
+
+	function migrateREP(uint256 universeId, uint256 amount, uint256 outcome) external {
+		require(outcome < 3, "Invalid outcome");
+		Universe memory universe = universes[universeId];
+		require(block.timestamp < universe.forkTime + REP_MIGRATION_WINDOW, "Universe not in REP migration window");
+
+		uint256 softBurnedREP = universe.reputationToken.balanceOf(address(1));
+		uint256 correspondingETH = amount * universe.ethBalance / (universe.reputationToken.totalSupply() - softBurnedREP);
+
+		// Genesis is using REPv2 which we cannot actually burn
+		if (universeId == 0) {
+			universe.reputationToken.transferFrom(msg.sender, address(1), amount);
+		} else {
+			ReputationToken(address(universe.reputationToken)).burn(msg.sender, amount);
+		}
+
+		uint256 childUniverseId = (universeId << 4) + outcome + 1;
+		Universe memory childUniverse = universes[childUniverseId];
+		ReputationToken(address(childUniverse.reputationToken)).mint(msg.sender, amount);
+
+		universe.ethBalance -= correspondingETH;
+		childUniverse.ethBalance += correspondingETH;
+		universes[universeId] = universe;
+		universes[childUniverseId] = childUniverse;
+	}
+
+	function cashInREP(uint256 universeId) external {
+		Universe memory universe = universes[universeId];
+		require(universe.forkTime !=0 && block.timestamp > universe.forkTime + REP_MIGRATION_WINDOW, "Universe has not completed REP migration");
+
+		uint256 amount = universe.reputationToken.balanceOf(msg.sender);
+
+		uint256 softBurnedREP = universe.reputationToken.balanceOf(address(1));
+		uint256 correspondingETH = amount * universe.ethBalance / (universe.reputationToken.totalSupply() - softBurnedREP);
+
+		// Genesis is using REPv2 which we cannot actually burn
+		if (universeId == 0) {
+			universe.reputationToken.transferFrom(msg.sender, address(1), amount);
+		} else {
+			ReputationToken(address(universe.reputationToken)).burn(msg.sender, amount);
+		}
+
+		(bool success, bytes memory data) = msg.sender.call{value: correspondingETH}("");
+		require(success, "Failed to send Ether");
+		universe.ethBalance -= correspondingETH;
+		universes[universeId] = universe;
 	}
 }

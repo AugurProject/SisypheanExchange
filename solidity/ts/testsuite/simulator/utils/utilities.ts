@@ -202,6 +202,15 @@ export const getERC20Balance = async (client: ReadClient, tokenAddress: Address,
 	})
 }
 
+export const getERC20Supply = async (client: ReadClient, tokenAddress: Address) => {
+	return await client.readContract({
+		abi: ABIS.mainnet.erc20,
+		functionName: 'totalSupply',
+		address: tokenAddress,
+		args: []
+	})
+}
+
 export const transferERC20 = async (client: WriteClient, tokenAddress: Address, to: Address, amount: bigint) => {
 	return await client.writeContract({
 		chain: mainnet,
@@ -352,6 +361,28 @@ export const dispute = async (client: WriteClient, universe: bigint, market: big
 		functionName: 'dispute',
 		address: sisypheanExchangeAddress,
 		args: [universe, market, outcome]
+	})
+}
+
+export const migrateREP = async (client: WriteClient, universe: bigint, amount: bigint, outcome: bigint) => {
+	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
+		functionName: 'migrateREP',
+		address: sisypheanExchangeAddress,
+		args: [universe, amount, outcome]
+	})
+}
+
+export const cashInREP = async (client: WriteClient, universe: bigint) => {
+	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
+		functionName: 'cashInREP',
+		address: sisypheanExchangeAddress,
+		args: [universe]
 	})
 }
 
