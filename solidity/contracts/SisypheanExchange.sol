@@ -7,6 +7,9 @@ import './ISisypheanExchange.sol';
 import './ReputationToken.sol';
 import './IERC20.sol';
 
+// NOTE: Currently a resolved market could be traded on and resolved again in a child universe. We can add things to prevent this if needed.
+// NOTE: We need a mechanism for having certain Cash be 1:1 while other existing cash is potentially a different ratio. Consider someone putting 1 eth into a complete set in a market and it migrating while unresolved in a fork. Post auction lets say it hit 90% fulfilment. The original complete set should provide .9 ETH in return but a new purchaser should be able to buy a complete set worth 1 ETH.
+
 contract SisypheanExchange is ForkedERC1155 {
 
 	struct Universe {
@@ -14,6 +17,7 @@ contract SisypheanExchange is ForkedERC1155 {
 		uint256 forkingMarket;
 		uint256 ethBalance;
 		uint256 forkTime;
+		uint256 ethBalanceDelta;
 	}
 
 	mapping(uint256 => Universe) public universes;
@@ -46,9 +50,13 @@ contract SisypheanExchange is ForkedERC1155 {
 	uint256 constant public REP_MIGRATION_WINDOW = 7 days;
 	uint256 constant public AUCTION_DURATION = 7 days;
 
+	uint256 constant public AUCTION_INITIAL_DIVISOR = 1_000_000;
+	uint256 constant public AUCTION_FINAL_MULTIPLIER = 1_000_000;
+
 	constructor() {
 		universes[0] = Universe(
 			IERC20(Constants.GENESIS_REPUTATION_TOKEN),
+			0,
 			0,
 			0,
 			0
@@ -165,7 +173,8 @@ contract SisypheanExchange is ForkedERC1155 {
 				new ReputationToken(),
 				0,
 				0,
-				0
+				0,
+				universe.ethBalance
 			);
 		}
 
@@ -197,6 +206,7 @@ contract SisypheanExchange is ForkedERC1155 {
 
 		universe.ethBalance -= correspondingETH;
 		childUniverse.ethBalance += correspondingETH;
+		childUniverse.ethBalanceDelta -= correspondingETH;
 		universes[universeId] = universe;
 		universes[childUniverseId] = childUniverse;
 	}
@@ -221,5 +231,29 @@ contract SisypheanExchange is ForkedERC1155 {
 		require(success, "Failed to send Ether");
 		universe.ethBalance -= correspondingETH;
 		universes[universeId] = universe;
+	}
+
+	function buyFromAuction(uint256 forkingUniverseId, uint256 outcome) external payable {
+		Universe memory forkingUniverse = universes[forkingUniverseId];
+		uint256 migrationEndTime = forkingUniverse.forkTime + REP_MIGRATION_WINDOW;
+		uint256 auctionEndTime = migrationEndTime + AUCTION_DURATION;
+		require(block.timestamp > migrationEndTime, "Universe still in REP migration window");
+		require(block.timestamp < auctionEndTime, "Universe not in Auction window");
+
+		uint256 childUniverseId = (forkingUniverseId << 4) + outcome + 1;
+		Universe memory childUniverse = universes[childUniverseId];
+
+		require(childUniverse.ethBalance > 0, "Auction complete");
+		require(msg.value == childUniverse.ethBalanceDelta, "ETH not sufficient to buy auction REP");
+
+		uint256 auctionTimePassed = block.timestamp - migrationEndTime;
+		uint256 childREPSupply = childUniverse.reputationToken.totalSupply();
+		uint256 repAmount = auctionTimePassed * (childREPSupply * AUCTION_FINAL_MULTIPLIER - childREPSupply / AUCTION_INITIAL_DIVISOR);
+
+		ReputationToken(address(childUniverse.reputationToken)).mint(msg.sender, repAmount);
+
+		childUniverse.ethBalance += msg.value;
+		childUniverse.ethBalanceDelta = 0;
+		universes[childUniverseId] = childUniverse;
 	}
 }

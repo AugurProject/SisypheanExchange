@@ -307,7 +307,7 @@ export const getUniverseData = async (client: ReadClient, universeId: bigint) =>
 		functionName: 'universes',
 		address: sisypheanExchangeAddress,
 		args: [universeId]
-	}) as [Address, bigint, bigint]
+	}) as [Address, bigint, bigint, bigint, bigint]
 }
 
 export const createMarket = async (client: WriteClient, universe: bigint, endTime: bigint ,extraInfo: String) => {
@@ -383,6 +383,18 @@ export const cashInREP = async (client: WriteClient, universe: bigint) => {
 		functionName: 'cashInREP',
 		address: sisypheanExchangeAddress,
 		args: [universe]
+	})
+}
+
+export const buyFromAuction = async (client: WriteClient, universe: bigint, outcome: bigint, value: bigint) => {
+	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
+		functionName: 'buyFromAuction',
+		address: sisypheanExchangeAddress,
+		value,
+		args: [universe, outcome]
 	})
 }
 

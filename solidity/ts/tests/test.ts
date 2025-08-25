@@ -2,7 +2,7 @@ import { describe, beforeEach, test } from 'node:test'
 import { getMockedEthSimulateWindowEthereum, MockWindowEthereum } from '../testsuite/simulator/MockWindowEthereum.js'
 import { createWriteClient } from '../testsuite/simulator/utils/viem.js'
 import { DAY, GENESIS_REPUTATION_TOKEN, NUM_TICKS, REP_BOND, TEST_ADDRESSES } from '../testsuite/simulator/utils/constants.js'
-import { approveToken, buyCompleteSets, cashInREP, claimTradingProceeds, createMarket, dispute, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getERC20Supply, getETHBalance, getMarketData, getMarketShareTokenBalance, getShareTokenCashBalance, getSisypheanExchangeAddress, getTokenId, getUniverseData, initialTokenBalance, isFinalized, isSisypheanExchangeDeployed, migrateCash, migrateREP, migrateShareToken, reportOutcome, returnRepBond, sellCompleteSets, setupTestAccounts } from '../testsuite/simulator/utils/utilities.js'
+import { approveToken, buyCompleteSets, buyFromAuction, cashInREP, claimTradingProceeds, createMarket, dispute, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getERC20Supply, getETHBalance, getMarketData, getMarketShareTokenBalance, getShareTokenCashBalance, getSisypheanExchangeAddress, getTokenId, getUniverseData, initialTokenBalance, isFinalized, isSisypheanExchangeDeployed, migrateCash, migrateREP, migrateShareToken, reportOutcome, returnRepBond, sellCompleteSets, setupTestAccounts } from '../testsuite/simulator/utils/utilities.js'
 import assert from 'node:assert'
 import { addressString } from '../testsuite/simulator/utils/bigint.js'
 
@@ -311,6 +311,11 @@ describe('Contract Test Suite', () => {
 		assert.strictEqual(genesisETHBalanceAfterMigration, expectedGenesisETHBalance, "Genesis ETH balance not as expected after REP migration")
 		assert.strictEqual(noUniverseETHBalanceAfterMigration, correspondingETH, "N) universe ETH balance not as expected after REP migration")
 
+		// We cannot participate in the REP auction yet
+		const ethBalanceDelta = (await getUniverseData(client, noUniverseId))[4]
+
+		await assert.rejects(buyFromAuction(client, genesisUniverse, 2n, ethBalanceDelta))
+
 		// End rep migration period
 		await mockWindow.advanceTime(7n * DAY + 1n)
 
@@ -325,13 +330,21 @@ describe('Contract Test Suite', () => {
 		const expectedGenesisETHBalanceAfterREPCashIn = genesisETHBalanceAfterMigration - expectedETHPayout
 		assert.strictEqual(genesisETHBalanceAfterREPCashIn, expectedGenesisETHBalanceAfterREPCashIn, "Genesis ETH balance not as expected after REP cash in")
 
-		// Dutch auction in each universe begins to raise ETH for minted REP
-		/*
-		On each universe, a dutch auction is held where people are bidding ETH in exchange for REP.
-		The system starts by offering rep_supply/1,000,000 REP for the needed amount of CASH and the amount of REP offered increases every second until it reaches rep_supply*1,000,000 REP offered.
-		The auction ends when either (A) one or more parties combined are willing to buy the CASH deficit worth of ETH for the current REP price or (B) it reaches the end without enough ETH willing to buy even at the final price.
-		The REP that auction participants receive will be minted and distributed when the auction finalizes. The ETH proceeds of the auction will be added to the CASH contract on the auction's universe.
-		If the auction fails to raise the necessary ETH (B), then the CASH contract's redemption price will be adjusted accordingly. If the auction succeeds at raising enough ETH (A) then the CASH contract's redemption price will remain at its pre-fork value.
-		*/
+		// Wait a day for auction to increase REP payout
+		await mockWindow.advanceTime(DAY)
+
+		//const genesisUniverseData = await getUniverseData(client, genesisUniverse)
+		const noUniverseDataAfterMigration = await getUniverseData(client, noUniverseId)
+
+		const repBalanceBeforeAuction = await getERC20Balance(client, noUniverseDataAfterMigration[0], client.account.address)
+		const repAuctionScale = repMigrationAmount * 1_000_000n - repMigrationAmount / 1_000_000n
+		const expectedREPPayout = DAY * repAuctionScale
+		await buyFromAuction(client, genesisUniverse, 2n, ethBalanceDelta)
+
+		const repBalanceAfterAuction = await getERC20Balance(client, noUniverseDataAfterMigration[0], client.account.address)
+		const actualREPPayout = repBalanceAfterAuction - repBalanceBeforeAuction
+		const fudgeForTime = 100n * repAuctionScale
+		const payoutDelta = actualREPPayout - expectedREPPayout
+		assert.ok(payoutDelta > 0 && payoutDelta < fudgeForTime, "User did not recieve expected REP from auction")
 	})
 })
