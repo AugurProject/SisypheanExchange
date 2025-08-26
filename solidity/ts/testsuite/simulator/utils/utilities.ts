@@ -1,9 +1,9 @@
 import 'viem/window'
-import { getContractAddress, numberToBytes, encodeAbiParameters, keccak256 } from 'viem'
+import { getContractAddress, numberToBytes, encodeAbiParameters, keccak256, Abi } from 'viem'
 import { mainnet } from 'viem/chains'
 import { promises as fs } from 'fs'
 import { ReadClient, WriteClient } from './viem.js'
-import { PROXY_DEPLOYER_ADDRESS, TEST_ADDRESSES } from './constants.js'
+import { GENESIS_REPUTATION_TOKEN, NUM_TICKS, PROXY_DEPLOYER_ADDRESS, TEST_ADDRESSES } from './constants.js'
 import { addressString } from './bigint.js'
 import { Address } from 'viem'
 import { ABIS } from '../../../abi/abis.js'
@@ -28,11 +28,16 @@ const ContractArtifact = funtypes.ReadonlyObject({
 		'contracts/SisypheanExchange.sol': funtypes.ReadonlyObject({
 			SisypheanExchange: ContractDefinition
 		}),
+		'contracts/ShareToken.sol': funtypes.ReadonlyObject({
+			ShareToken: ContractDefinition
+		})
 	}),
 })
 
 const contractLocation = './artifacts/Contracts.json'
 export const contractsArtifact = ContractArtifact.parse(JSON.parse(await fs.readFile(contractLocation, 'utf8')))
+
+export const initialTokenBalance = 1000000n * 10n**18n
 
 export async function sleep(milliseconds: number) {
 	await new Promise(resolve => setTimeout(resolve, milliseconds))
@@ -188,11 +193,54 @@ export const setERC1155Approval = async (client: WriteClient, tokenAddress: Addr
 	})
 }
 
+export const getERC20Balance = async (client: ReadClient, tokenAddress: Address, ownerAddress: Address) => {
+	return await client.readContract({
+		abi: ABIS.mainnet.erc20,
+		functionName: 'balanceOf',
+		address: tokenAddress,
+		args: [ownerAddress]
+	})
+}
+
+export const getERC20Supply = async (client: ReadClient, tokenAddress: Address) => {
+	return await client.readContract({
+		abi: ABIS.mainnet.erc20,
+		functionName: 'totalSupply',
+		address: tokenAddress,
+		args: []
+	})
+}
+
+export const transferERC20 = async (client: WriteClient, tokenAddress: Address, to: Address, amount: bigint) => {
+	return await client.writeContract({
+		chain: mainnet,
+		abi: ABIS.mainnet.erc20,
+		functionName: 'transfer',
+		address: tokenAddress,
+		args: [to, amount]
+	})
+}
+
+export const transferERC1155 = async (client: WriteClient, tokenAddress: Address, from: Address, to: Address, id: bigint, amount: bigint) => {
+	return await client.writeContract({
+		chain: mainnet,
+		abi: ABIS.mainnet.erc1155,
+		functionName: 'safeTransferFrom',
+		address: tokenAddress,
+		args: [from, to, id, amount]
+	})
+}
+
+export const getETHBalance = async (client: ReadClient, address: Address) => {
+	return await client.getBalance({address})
+}
+
 export const setupTestAccounts = async (mockWindowEthereum: MockWindowEthereum) => {
 	const accountValues = TEST_ADDRESSES.map((address) => {
-		return { address: addressString(address), amount: 1000000n * 10n**18n}
+		return { address: addressString(address), amount: initialTokenBalance}
 	})
 	await mintETH(mockWindowEthereum, accountValues)
+	await mintERC20(mockWindowEthereum, addressString(GENESIS_REPUTATION_TOKEN), accountValues, 1n)
 }
 
 export async function ensureProxyDeployerDeployed(client: WriteClient): Promise<void> {
@@ -225,4 +273,234 @@ export const ensureSisypheanExchangeDeployed = async (client: WriteClient) => {
 	await ensureProxyDeployerDeployed(client)
 	const hash = await client.sendTransaction(deploySisypheanExchangeTransaction())
 	await client.waitForTransactionReceipt({ hash })
+}
+
+export function getShareTokenAddress() {
+	const sisExAddressValue =  getSisypheanExchangeAddress().substring(2).padStart(64, '0')
+	const bytecode: `0x${ string }` = `0x${ contractsArtifact.contracts['contracts/ShareToken.sol'].ShareToken.evm.bytecode.object}${sisExAddressValue}`
+	return getContractAddress({ bytecode, from: addressString(PROXY_DEPLOYER_ADDRESS), opcode: 'CREATE2', salt: numberToBytes(0) })
+}
+
+export const isShareTokenDeployed = async (client: ReadClient) => {
+	const expectedDeployedBytecode: `0x${ string }` = `0x${ contractsArtifact.contracts['contracts/ShareToken.sol'].ShareToken.evm.deployedBytecode.object }`
+	const address = getShareTokenAddress()
+	const deployedBytecode = await client.getCode({ address })
+	return deployedBytecode === expectedDeployedBytecode
+}
+
+export const deployShareTokenTransaction = () => {
+	const sisExAddressValue =  getSisypheanExchangeAddress().substring(2).padStart(64, '0')
+	const bytecode: `0x${ string }` = `0x${ contractsArtifact.contracts['contracts/ShareToken.sol'].ShareToken.evm.bytecode.object }${sisExAddressValue}`
+	return { to: addressString(PROXY_DEPLOYER_ADDRESS), data: bytecode } as const
+}
+
+export const ensureShareTokenDeployed = async (client: WriteClient) => {
+	await ensureProxyDeployerDeployed(client)
+	const hash = await client.sendTransaction(deployShareTokenTransaction())
+	await client.waitForTransactionReceipt({ hash })
+}
+
+export const getUniverseData = async (client: ReadClient, universeId: bigint) => {
+	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
+	return await client.readContract({
+		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
+		functionName: 'universes',
+		address: sisypheanExchangeAddress,
+		args: [universeId]
+	}) as [Address, bigint, bigint, bigint, bigint]
+}
+
+export const createMarket = async (client: WriteClient, universe: bigint, endTime: bigint ,extraInfo: String) => {
+	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
+		functionName: 'createMarket',
+		address: sisypheanExchangeAddress,
+		args: [universe, endTime, client.account.address, extraInfo]
+	})
+}
+
+export const getMarketData = async (client: ReadClient, marketId: bigint) => {
+	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
+	return await client.readContract({
+		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
+		functionName: 'markets',
+		address: sisypheanExchangeAddress,
+		args: [marketId]
+	}) as [bigint, Address, string, Address]
+}
+
+export const reportOutcome = async (client: WriteClient, universe: bigint, market: bigint, outcome: bigint) => {
+	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
+		functionName: 'reportOutcome',
+		address: sisypheanExchangeAddress,
+		args: [universe, market, outcome]
+	})
+}
+
+export const returnRepBond = async (client: WriteClient, universe: bigint, market: bigint) => {
+	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
+		functionName: 'returnRepBond',
+		address: sisypheanExchangeAddress,
+		args: [universe, market]
+	})
+}
+
+export const dispute = async (client: WriteClient, universe: bigint, market: bigint, outcome: bigint) => {
+	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
+		functionName: 'dispute',
+		address: sisypheanExchangeAddress,
+		args: [universe, market, outcome]
+	})
+}
+
+export const migrateREP = async (client: WriteClient, universe: bigint, amount: bigint, outcome: bigint) => {
+	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
+		functionName: 'migrateREP',
+		address: sisypheanExchangeAddress,
+		args: [universe, amount, outcome]
+	})
+}
+
+export const cashInREP = async (client: WriteClient, universe: bigint) => {
+	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
+		functionName: 'cashInREP',
+		address: sisypheanExchangeAddress,
+		args: [universe]
+	})
+}
+
+export const buyFromAuction = async (client: WriteClient, universe: bigint, outcome: bigint, value: bigint) => {
+	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
+		functionName: 'buyFromAuction',
+		address: sisypheanExchangeAddress,
+		value,
+		args: [universe, outcome]
+	})
+}
+
+export const isFinalized = async (client: ReadClient, universe: bigint, marketId: bigint) => {
+	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
+	return await client.readContract({
+		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
+		functionName: 'isFinalized',
+		address: sisypheanExchangeAddress,
+		args: [universe, marketId]
+	}) as boolean
+}
+
+export const getWinningOutcome = async (client: ReadClient, universe: bigint, marketId: bigint) => {
+	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
+	return await client.readContract({
+		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
+		functionName: 'getWinningOutcome',
+		address: sisypheanExchangeAddress,
+		args: [universe, marketId]
+	}) as bigint
+}
+
+export const getShareTokenCashBalance = async (client: ReadClient, universe: bigint) => {
+	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
+	const shareTokenAddress = await getShareTokenAddress()
+	return await client.readContract({
+		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
+		functionName: 'balanceOf',
+		address: sisypheanExchangeAddress,
+		args: [shareTokenAddress, universe]
+	}) as bigint
+}
+
+export const buyCompleteSets = async (client: WriteClient, universe: bigint, marketId: bigint, account: Address, amount: bigint) => {
+	const shareTokenAddress = await getShareTokenAddress()
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/ShareToken.sol'].ShareToken.abi as Abi,
+		functionName: 'buyCompleteSets',
+		address: shareTokenAddress,
+		value: amount * NUM_TICKS,
+		args: [universe, marketId, account, amount]
+	})
+}
+
+export const sellCompleteSets = async (client: WriteClient, universe: bigint, marketId: bigint, owner: Address, recipient: Address, amount: bigint) => {
+	const shareTokenAddress = await getShareTokenAddress()
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/ShareToken.sol'].ShareToken.abi as Abi,
+		functionName: 'sellCompleteSets',
+		address: shareTokenAddress,
+		args: [universe, marketId, owner, recipient, amount]
+	})
+}
+
+export const claimTradingProceeds = async (client: WriteClient, universe: bigint, marketId: bigint, owner: Address, recipient: Address) => {
+	const shareTokenAddress = await getShareTokenAddress()
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/ShareToken.sol'].ShareToken.abi as Abi,
+		functionName: 'claimTradingProceeds',
+		address: shareTokenAddress,
+		args: [universe, marketId, owner, recipient]
+	})
+}
+
+export const getMarketShareTokenBalance = async (client: ReadClient, universe: bigint, marketId: bigint, account: Address) => {
+	const shareTokenAddress = await getShareTokenAddress()
+	return await client.readContract({
+		abi: contractsArtifact.contracts['contracts/ShareToken.sol'].ShareToken.abi as Abi,
+		functionName: 'balanceOfMarketShares',
+		address: shareTokenAddress,
+		args: [universe, marketId, account]
+	}) as [bigint, bigint, bigint]
+}
+
+export const getTokenId = async (client: ReadClient, universe: bigint, marketId: bigint, outcome: bigint) => {
+	const shareTokenAddress = await getShareTokenAddress()
+	return await client.readContract({
+		abi: contractsArtifact.contracts['contracts/ShareToken.sol'].ShareToken.abi as Abi,
+		functionName: 'getTokenId',
+		address: shareTokenAddress,
+		args: [universe, marketId, outcome]
+	}) as bigint
+}
+
+export const migrateShareToken = async (client: WriteClient, fromId: bigint) => {
+	const shareTokenAddress = await getShareTokenAddress()
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/ShareToken.sol'].ShareToken.abi as Abi,
+		functionName: 'migrate',
+		address: shareTokenAddress,
+		args: [fromId]
+	})
+}
+
+export const migrateCash = async (client: WriteClient, fromId: bigint) => {
+	const shareTokenAddress = await getShareTokenAddress()
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/ShareToken.sol'].ShareToken.abi as Abi,
+		functionName: 'migrateCash',
+		address: shareTokenAddress,
+		args: [fromId]
+	})
 }

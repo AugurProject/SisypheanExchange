@@ -73,6 +73,7 @@ export class EthereumJSONRpcRequestHandler {
 			throw new Error(`Query to RPC server ${ this.rpcUrl } failed with error code: ${ responseObject.response.status } while quering for ${ rpcRequest.method }.`)
 		}
 		const jsonRpcResponse = JsonRpcResponse.parse(responseObject.response)
+		//console.log(JSON.stringify(EthereumJsonRpcRequest.serialize(rpcRequest)))
 		if ('error' in jsonRpcResponse) throw new JsonRpcResponseError(jsonRpcResponse)
 		return jsonRpcResponse.result
 	}

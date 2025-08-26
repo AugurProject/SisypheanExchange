@@ -2,7 +2,7 @@ import { EIP1193Provider } from 'viem'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, DEFAULT_CALL_ADDRESS } from './utils/constants.js'
 import { EthereumClientService } from './EthereumClientService.js'
 import { EthCallParams, EthereumJsonRpcRequest, EthGetLogsResponse, EthTransactionReceiptResponse, GetBlockReturn, SendTransactionParams } from './types/jsonRpcTypes.js'
-import { appendTransaction, createSimulationState, getInputFieldFromDataOrInput, getPreSimulated, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedTransactionByHash, getSimulatedTransactionCountOverStack, getSimulatedTransactionReceipt, mockSignTransaction, simulatedCall, simulateEstimateGas } from './SimulationModeEthereumClientService.js'
+import { appendTransaction, createSimulationState, getInputFieldFromDataOrInput, getPreSimulated, getSimulatedBalance, getSimulatedBlock, getSimulatedBlockNumber, getSimulatedCode, getSimulatedLogs, getSimulatedTransactionByHash, getSimulatedTransactionCountOverStack, getSimulatedTransactionReceipt, mockSignTransaction, simulatedCall, simulateEstimateGas } from './SimulationModeEthereumClientService.js'
 import { SimulationState } from './types/visualizerTypes.js'
 import { StateOverrides } from './types/ethSimulateTypes.js'
 import { EthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
@@ -84,6 +84,7 @@ export const formEthSendTransaction = async (ethereumClientService: EthereumClie
 export type MockWindowEthereum = EIP1193Provider & {
 	addStateOverrides: (stateOverrides: StateOverrides) => Promise<void>
 	advanceTime: (amountInSeconds: EthereumQuantity) => Promise<void>
+	getTime: () => Promise<Date>
 }
 export const getMockedEthSimulateWindowEthereum = (): MockWindowEthereum => {
 	const config = getConfig()
@@ -101,6 +102,10 @@ export const getMockedEthSimulateWindowEthereum = (): MockWindowEthereum => {
 		request: async (unknownArgs: unknown): Promise<any> => {
 			const args = EthereumJsonRpcRequest.parse(unknownArgs)
 			switch(args.method) {
+				case 'eth_getBalance': {
+					const result = await getSimulatedBalance(ethereumClientService, undefined, simulationState, args.params[0], args.params[1])
+					return EthereumQuantity.serialize(result)
+				}
 				case 'eth_call': {
 					const result = await call(ethereumClientService, simulationState, args)
 					if (result.error !== undefined) throw new Error(result.error.message)
@@ -118,6 +123,7 @@ export const getMockedEthSimulateWindowEthereum = (): MockWindowEthereum => {
 					const result = ethereumClientService.getChainId()
 					return EthereumQuantity.serialize(result)
 				}
+				case 'wallet_sendTransaction':
 				case 'eth_sendTransaction': {
 					//TODO, only one transaction should be included at once
 					const blockDelta = simulationState?.blocks.length || 0 // always create new block to add transactions to
@@ -125,6 +131,11 @@ export const getMockedEthSimulateWindowEthereum = (): MockWindowEthereum => {
 					if (transaction.success === false) throw new Error(transaction.error?.message)
 					const signed = mockSignTransaction(transaction.transaction)
 					simulationState = await appendTransaction(ethereumClientService, undefined, simulationState, [transaction.transaction], blockDelta)
+					const lastTx = simulationState.blocks.at(-1)?.simulatedTransactions.at(-1)
+					if (lastTx === undefined) throw new Error('Failed To append transaction')
+					if (lastTx.ethSimulateV1CallResult.status === 'failure') {
+						throw new ErrorWithDataAndCode(lastTx.ethSimulateV1CallResult.error.code, lastTx.ethSimulateV1CallResult.error.message, lastTx.ethSimulateV1CallResult.returnData)
+					}
 					return EthereumBytes32.serialize(signed.hash)
 				}
 				case 'eth_blockNumber': {
@@ -219,6 +230,10 @@ export const getMockedEthSimulateWindowEthereum = (): MockWindowEthereum => {
 				]
 			}
 			simulationState = await createSimulationState(ethereumClientService, undefined, input)
+		},
+		getTime: async () => {
+			if (simulationState === undefined) return new Date()
+			return simulationState.blockTimestamp
 		}
 	}
 }

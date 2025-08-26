@@ -1,5 +1,5 @@
 import { EthereumClientService } from './EthereumClientService.js'
-import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, EthereumSendableSignedTransaction } from './types/wire-types.js'
+import { EthereumUnsignedTransaction, EthereumSignedTransactionWithBlockData, EthereumBlockTag, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, EthereumSendableSignedTransaction, EthereumBlockHeaderTransaction } from './types/wire-types.js'
 import { addressString, bigintToUint8Array, bytes32String, calculateWeightedPercentile, dataString, dataStringWith0xStart, max, min, stringToUint8Array } from './utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from './utils/constants.js'
 import { SimulatedTransaction, SimulationState, EstimateGasError, SimulationStateInput } from './types/visualizerTypes.js'
@@ -7,7 +7,7 @@ import { EthereumUnsignedTransactionToUnsignedTransaction, IUnsignedTransaction1
 import { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from './types/jsonRpcTypes.js'
 import { assertNever, modifyObject } from './utils/typescript.js'
 import { SignMessageParams } from './types/jsonRpcSigningTypes.js'
-import { getCodeByteCode } from './utils/ethereumByteCodes.js'
+import { getCodeByteCode, getEthBalanceByteCode } from './utils/ethereumByteCodes.js'
 import { stripLeadingZeros } from './utils/typed-arrays.js'
 import { JsonRpcResponseError } from './utils/errors.js'
 import { decodeFunctionResult, encodeFunctionData, hashMessage, hashTypedData, keccak256 } from 'viem'
@@ -17,7 +17,7 @@ import { StateOverrides } from './types/ethSimulateTypes.js'
 const MOCK_PUBLIC_PRIVATE_KEY = 0x1n // key used to sign mock transactions
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n // key used to sign simulated transatons
 const ADDRESS_FOR_PRIVATE_KEY_ONE = 0x7E5F4552091A69125d5DfCb7b8C2659029395Bdfn
-const GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
+const TEMP_CONTRACT_ADDRESS = 0x1ce438391307f908756fefe0fe220c0f0d51508an
 
 export const copySimulationState = (simulationState: SimulationState): SimulationState => {
 	return { ...simulationState, blocks: simulationState.blocks.map((block) => ({ stateOverrides: { ...block.stateOverrides }, signedMessages: [ ...block.signedMessages ], simulatedTransactions: [ ...block.simulatedTransactions ], timeIncreaseDelta: block.timeIncreaseDelta })) }
@@ -75,7 +75,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		const lastResult = lastBlock.simulatedTransactions[lastBlock.simulatedTransactions.length - 1]?.ethSimulateV1CallResult
 		if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }
 		if (lastResult.status === 'failure') return { error: { ...lastResult.error, data: dataStringWith0xStart(lastResult.returnData) } }
-		const gasSpent = lastResult.gasUsed * 125n * 64n / (100n * 63n) // add 25% * 64 / 63 extra  to account for gas savings <https://eips.ethereum.org/EIPS/eip-3529>
+		const gasSpent = lastResult.gasUsed * 135n * 64n / (100n * 63n) // add 35% * 64 / 63 extra  to account for gas savings <https://eips.ethereum.org/EIPS/eip-3529>
 		return { gas: gasSpent < maxGas ? gasSpent : maxGas }
 	} catch (error: unknown) {
 		if (error instanceof JsonRpcResponseError) {
@@ -100,10 +100,16 @@ export const mockSignTransaction = (transaction: EthereumUnsignedTransaction) : 
 		if (transaction.type !== 'legacy') throw new Error('types do not match')
 		return { ...transaction, ...signatureParams, hash }
 	}
-
+	if (unsignedTransaction.type === '7702') {
+		const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
+		const authorizationList = unsignedTransaction.authorizationList.map((element) => ({ ...element, ...signatureParams }))
+		const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams, authorizationList })))
+		if (transaction.type !== '7702') throw new Error('types do not match')
+		return { ...transaction, ...signatureParams, hash, authorizationList }
+	}
 	const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
 	const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams })))
-	if (transaction.type === 'legacy') throw new Error('types do not match')
+	if (transaction.type === 'legacy' || transaction.type === '7702') throw new Error('types do not match')
 	return { ...transaction, ...signatureParams, hash }
 }
 
@@ -265,19 +271,32 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 	let cumGas = 0n
 	let currentLogIndex = 0
 	if (simulationState === undefined) { return await ethereumClientService.getTransactionReceipt(hash, requestAbortController) }
+
+	const getTransactionSpecificFields = (signedTransaction: EthereumSendableSignedTransaction) => {
+		switch(signedTransaction.type) {
+			case 'legacy':
+			case '1559':
+			case '2930': return { type: signedTransaction.type }
+			case '4844': return {
+				type: signedTransaction.type,
+				blobGasUsed: GAS_PER_BLOB * BigInt(signedTransaction.blobVersionedHashes.length),
+				blobGasPrice: signedTransaction.maxFeePerBlobGas,
+			}
+			case '7702': return {
+				type: signedTransaction.type,
+				authorizationList: signedTransaction.authorizationList
+			}
+			default: assertNever(signedTransaction)
+		}
+	}
+
 	const blockNum = await ethereumClientService.getBlockNumber(requestAbortController)
 	for (const [blockDelta, block] of simulationState.blocks.entries()) {
 		for (const [transactionIndex, simulatedTransaction] of block.simulatedTransactions.entries()) {
 			cumGas += simulatedTransaction.ethSimulateV1CallResult.gasUsed
 			if (hash === simulatedTransaction.preSimulationTransaction.hash) {
 				return {
-					...simulatedTransaction.preSimulationTransaction.type === '4844' ? {
-						type: simulatedTransaction.preSimulationTransaction.type,
-						blobGasUsed: GAS_PER_BLOB * BigInt(simulatedTransaction.preSimulationTransaction.blobVersionedHashes.length),
-						blobGasPrice: simulatedTransaction.preSimulationTransaction.maxFeePerBlobGas,
-					} : {
-						type: simulatedTransaction.preSimulationTransaction.type,
-					},
+					...getTransactionSpecificFields(simulatedTransaction.preSimulationTransaction),
 					blockHash: getHashOfSimulatedBlock(simulationState, blockDelta),
 					blockNumber: blockNum + BigInt(blockDelta) + 1n,
 					transactionHash: simulatedTransaction.preSimulationTransaction.hash,
@@ -311,8 +330,55 @@ export const getSimulatedTransactionReceipt = async (ethereumClientService: Ethe
 	return await ethereumClientService.getTransactionReceipt(hash, requestAbortController)
 }
 
-export const getSimulatedBalance = async (_ethereumClientService: EthereumClientService, _requestAbortController: AbortController | undefined, _simulationState: SimulationState | undefined, _address: bigint, _blockTag: EthereumBlockTag = 'latest'): Promise<bigint> => {
-	throw new Error('eth_getBalance not implemented')
+
+const BALANCE_ABI = [{
+	"inputs": [
+		{
+		"internalType": "address",
+		"name": "addr",
+		"type": "address"
+		}
+	],
+	"name": "getBalance",
+	"outputs": [
+		{
+		"internalType": "uint256",
+		"name": "balance",
+		"type": "uint256"
+		}
+	],
+	"stateMutability": "view",
+	"type": "function"
+}]
+export const getSimulatedBalance = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState | undefined, address: bigint, blockTag: EthereumBlockTag = 'latest'): Promise<bigint> => {
+	if (simulationState == undefined) return await ethereumClientService.getBalance(address, blockTag, requestAbortController)
+
+	const block = await ethereumClientService.getBlock(requestAbortController)
+	if (block === null) throw new Error('The latest block is null')
+
+	const input = stringToUint8Array(encodeFunctionData({ abi: BALANCE_ABI, functionName: 'getBalance', args: [addressString(address)] }))
+
+	const getBalanceTransaction = {
+		type: '1559',
+		from: MOCK_ADDRESS,
+		chainId: ethereumClientService.getChainId(),
+		nonce: await ethereumClientService.getTransactionCount(MOCK_ADDRESS, 'latest', requestAbortController),
+		maxFeePerGas: 0n,
+		maxPriorityFeePerGas: 0n,
+		gas: block.gasLimit,
+		to: TEMP_CONTRACT_ADDRESS,
+		value: 0n,
+		input: input,
+		accessList: []
+	} as const
+	const multiCall = await simulatedMulticall(ethereumClientService, requestAbortController, simulationState, [getBalanceTransaction], { [addressString(TEMP_CONTRACT_ADDRESS)]: { code: getEthBalanceByteCode() } })
+	const lastBlock = multiCall.blocks[multiCall.blocks.length - 1]
+	if (lastBlock === undefined) throw new Error('last block did not exist in multicall')
+	const lastResult = lastBlock.simulatedTransactions[lastBlock.simulatedTransactions.length - 1]?.ethSimulateV1CallResult
+	if (lastResult === undefined) throw new Error('last result did not exist in multicall')
+	if (lastResult.status === 'failure') throw new Error(`Eth balance call failure: ${lastResult.error}`)
+	const parsed = decodeFunctionResult({ abi: BALANCE_ABI, functionName: 'getBalance', data: dataStringWith0xStart(lastResult.returnData) }) as number
+	return BigInt(parsed)
 }
 
 const AT_ABI = [{
@@ -354,12 +420,12 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 		maxFeePerGas: 0n,
 		maxPriorityFeePerGas: 0n,
 		gas: block.gasLimit,
-		to: GET_CODE_CONTRACT,
+		to: TEMP_CONTRACT_ADDRESS,
 		value: 0n,
 		input: input,
 		accessList: []
 	} as const
-	const multiCall = await simulatedMulticall(ethereumClientService, requestAbortController, simulationState, [getCodeTransaction], { [addressString(GET_CODE_CONTRACT)]: { code: getCodeByteCode() } })
+	const multiCall = await simulatedMulticall(ethereumClientService, requestAbortController, simulationState, [getCodeTransaction], { [addressString(TEMP_CONTRACT_ADDRESS)]: { code: getCodeByteCode() } })
 	const lastBlock = multiCall.blocks[multiCall.blocks.length - 1]
 	if (lastBlock === undefined) throw new Error('last block did not exist in multicall')
 	const lastResult = lastBlock.simulatedTransactions[lastBlock.simulatedTransactions.length - 1]?.ethSimulateV1CallResult
@@ -645,9 +711,13 @@ export const getSimulatedFeeHistory = async (ethereumClientService: EthereumClie
 		...rewardPercentiles === undefined ? {} : {
 			reward: [rewardPercentiles.map((percentile) => {
 				// we are using transaction.gas as a weighting factor while this should be `gasUsed`. Getting `gasUsed` requires getting transaction receipts, which we don't want to be doing
-				const effectivePriorityAndGasWeights = newestBlock.transactions.map((tx) => tx.type === '1559' || tx.type === '4844' ?
-					{ dataPoint: min(tx.maxPriorityFeePerGas, tx.maxFeePerGas - (newestBlockBaseFeePerGas ?? 0n)), weight: tx.gas }
-					: { dataPoint: tx.gasPrice - (newestBlockBaseFeePerGas ?? 0n), weight: tx.gas })
+				const getDataPoint = (tx: EthereumBlockHeaderTransaction) => {
+					if ('maxPriorityFeePerGas' in tx && 'maxFeePerGas' in tx && 'gas' in tx) return { dataPoint: min(tx.maxPriorityFeePerGas, tx.maxFeePerGas - (newestBlockBaseFeePerGas ?? 0n)), weight: tx.gas }
+					if ('gasPrice' in tx && 'gas' in tx) return { dataPoint: tx.gasPrice - (newestBlockBaseFeePerGas ?? 0n), weight: tx.gas }
+					return { dataPoint: 0n, weight: 0n }
+				}
+
+				const effectivePriorityAndGasWeights = newestBlock.transactions.map((tx) => getDataPoint(tx))
 
 				// we can have negative values here, as The Interceptor creates maxFeePerGas = 0 transactions that are intended to have zero base fee, which is not possible in reality
 				const zeroOutNegativeValues = effectivePriorityAndGasWeights.map((point) => modifyObject(point, { dataPoint: max(0n, point.dataPoint) }))
