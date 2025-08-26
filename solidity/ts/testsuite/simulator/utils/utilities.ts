@@ -328,7 +328,7 @@ export const getMarketData = async (client: ReadClient, marketId: bigint) => {
 		functionName: 'markets',
 		address: sisypheanExchangeAddress,
 		args: [marketId]
-	}) as [bigint, Address, string, Address]
+	}) as [bigint, Address, Address, string]
 }
 
 export const reportOutcome = async (client: WriteClient, universe: bigint, market: bigint, outcome: bigint) => {

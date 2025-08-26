@@ -23,16 +23,16 @@ contract SisypheanExchange is ForkedERC1155 {
 	mapping(uint192 => Universe) public universes;
 
 	struct MarketData {
-		uint256 endTime;
+		uint64 endTime;
+		uint192 originUniverse;
 		address designatedReporter;
 		string extraInfo;
-		uint192 originUniverse;
 	}
 
 	struct MarketResolutionData {
 		address initialReporter;
 		uint8 outcome;
-		uint256 reportTime;
+		uint64 reportTime;
 	}
 
 	mapping(uint56 => MarketData) public markets;
@@ -103,16 +103,16 @@ contract SisypheanExchange is ForkedERC1155 {
 		universes[_universeId] = universe;
 	}
 
-	function createMarket(uint192 _universeId, uint256 _endTime, address _designatedReporterAddress, string memory _extraInfo) public returns (uint56 _newMarket) {
+	function createMarket(uint192 _universeId, uint64 _endTime, address _designatedReporterAddress, string memory _extraInfo) public returns (uint56 _newMarket) {
 		Universe memory universe = universes[_universeId];
 		require(universe.forkingMarket == 0, "Universe is forked");
 		universe.reputationToken.transferFrom(msg.sender, address(this), REP_BOND);
 		uint56 _marketId = ++marketIdCounter;
 		markets[_marketId] = MarketData(
 			_endTime,
+			_universeId,
 			_designatedReporterAddress,
-			_extraInfo,
-			_universeId
+			_extraInfo
 		);
 		return _newMarket;
 	}
@@ -129,7 +129,7 @@ contract SisypheanExchange is ForkedERC1155 {
 
 		marketResolutions[_universeId][_marketId].initialReporter = msg.sender;
 		marketResolutions[_universeId][_marketId].outcome = _outcome;
-		marketResolutions[_universeId][_marketId].reportTime = block.timestamp;
+		marketResolutions[_universeId][_marketId].reportTime = uint64(block.timestamp);
 	}
 
 	// TODO: Handle REP staked in escalation game after fork
