@@ -190,12 +190,12 @@ contract SisypheanExchange is ForkedERC1155 {
 		Universe memory universe = universes[universeId];
 		require(block.timestamp < universe.forkTime + REP_MIGRATION_WINDOW, "Universe not in REP migration window");
 
-		uint256 softBurnedREP = universe.reputationToken.balanceOf(address(1));
+		uint256 softBurnedREP = universe.reputationToken.balanceOf(Constants.BURN_ADDRESS);
 		uint256 correspondingETH = amount * universe.ethBalance / (universe.reputationToken.totalSupply() - softBurnedREP);
 
 		// Genesis is using REPv2 which we cannot actually burn
 		if (universeId == 0) {
-			universe.reputationToken.transferFrom(msg.sender, address(1), amount);
+			universe.reputationToken.transferFrom(msg.sender, Constants.BURN_ADDRESS, amount);
 		} else {
 			ReputationToken(address(universe.reputationToken)).burn(msg.sender, amount);
 		}
@@ -217,12 +217,12 @@ contract SisypheanExchange is ForkedERC1155 {
 
 		uint256 amount = universe.reputationToken.balanceOf(msg.sender);
 
-		uint256 softBurnedREP = universe.reputationToken.balanceOf(address(1));
+		uint256 softBurnedREP = universe.reputationToken.balanceOf(Constants.BURN_ADDRESS);
 		uint256 correspondingETH = amount * universe.ethBalance / (universe.reputationToken.totalSupply() - softBurnedREP);
 
 		// Genesis is using REPv2 which we cannot actually burn
 		if (universeId == 0) {
-			universe.reputationToken.transferFrom(msg.sender, address(1), amount);
+			universe.reputationToken.transferFrom(msg.sender, Constants.BURN_ADDRESS, amount);
 		} else {
 			ReputationToken(address(universe.reputationToken)).burn(msg.sender, amount);
 		}

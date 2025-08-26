@@ -15,6 +15,7 @@ export const PROXY_DEPLOYER_ADDRESS = 0x7a0d94f55792c434d74a40883c6ed8545e406d12
 export const VITALIK = 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045n
 export const NUM_TICKS = 1000n
 export const REP_BOND = 10n**18n
+export const BURN_ADDRESS = 0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeFn
 
 // Testing
 export const TEST_ADDRESSES = [
