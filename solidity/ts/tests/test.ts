@@ -45,9 +45,9 @@ describe('Contract Test Suite', () => {
 		const marketData = await getMarketData(client, marketId)
 
 		assert.strictEqual(marketData[0], endTime, 'Market endTime not as expected')
-		assert.strictEqual(marketData[1].toLowerCase(), client.account.address, 'Market designated reporter not as expected')
-		assert.strictEqual(marketData[2], "test", 'Market extraInfo not as expected')
-		assert.strictEqual(marketData[3], genesisUniverse, 'Market origin universe not as expected')
+		assert.strictEqual(marketData[1], genesisUniverse, 'Market origin universe not as expected')
+		assert.strictEqual(marketData[2].toLowerCase(), client.account.address, 'Market designated reporter not as expected')
+		assert.strictEqual(marketData[3], "test", 'Market extraInfo not as expected')
 	})
 
 	test('canBuyAndSellCompleteSets', async () => {

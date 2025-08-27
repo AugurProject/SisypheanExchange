@@ -19,27 +19,27 @@ contract ShareToken is ForkedERC1155 {
 		sisypheanExchange = _sisypheanExchange;
 	}
 
-	function universeHasForked(uint256 universeId) internal override view returns (bool) {
+	function universeHasForked(uint192 universeId) internal override view returns (bool) {
 		return sisypheanExchange.forked(universeId);
 	}
 
-	function getUniverseId(uint256 id) internal override pure returns (uint256 universeId) {
+	function getUniverseId(uint256 id) internal override pure returns (uint192 universeId) {
 		assembly {
-			universeId := shr(128, and(id, 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000000000000000000000000000000))
+			universeId := shr(64, and(id, 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF0000000000000000))
 		}
 	}
 
-	function getChildId(uint256 originalId, uint256 newUniverse) internal override pure returns (uint256 newId) {
+	function getChildId(uint256 originalId, uint192 newUniverse) internal override pure returns (uint256 newId) {
 		assembly {
-			newId := or(shr(128, shl(128, originalId)), shl(128, newUniverse))
+			newId := or(shr(192, shl(192, originalId)), shl(64, newUniverse))
 		}
 	}
 
-	function migrateCash(uint256 fromUniverseId) external {
+	function migrateCash(uint192 fromUniverseId) external {
 		sisypheanExchange.migrate(fromUniverseId);
 	}
 
-	function buyCompleteSets(uint256 _universeId, uint256 _marketId, address _account, uint256 _amount) external payable {
+	function buyCompleteSets(uint192 _universeId, uint56 _marketId, address _account, uint256 _amount) external payable {
 		uint256 _cost = _amount * Constants.NUM_TICKS;
 		require(_cost == msg.value, "Sent Ether is not equal to complete set purchase cost");
 		sisypheanExchange.deposit{value: msg.value}(_universeId, address(this));
@@ -47,7 +47,7 @@ contract ShareToken is ForkedERC1155 {
 		uint256[] memory _tokenIds = new uint256[](Constants.NUM_OUTCOMES);
 		uint256[] memory _values = new uint256[](Constants.NUM_OUTCOMES);
 
-		for (uint256 _i = 0; _i < Constants.NUM_OUTCOMES; _i++) {
+		for (uint8 _i = 0; _i < Constants.NUM_OUTCOMES; _i++) {
 			_tokenIds[_i] = TokenId.getTokenId(_universeId, _marketId, _i);
 			_values[_i] = _amount;
 		}
@@ -55,13 +55,13 @@ contract ShareToken is ForkedERC1155 {
 		_mintBatch(_account, _tokenIds, _values);
 	}
 
-	function sellCompleteSets(uint256 _universeId, uint256 _marketId, address _owner, address _recipient, uint256 _amount) external {
+	function sellCompleteSets(uint192 _universeId, uint56 _marketId, address _owner, address _recipient, uint256 _amount) external {
 		require(_owner == msg.sender || isApprovedForAll(_owner, msg.sender) == true, "ERC1155: need operator approval to sell complete sets");
 
 		uint256[] memory _tokenIds = new uint256[](Constants.NUM_OUTCOMES);
 		uint256[] memory _values = new uint256[](Constants.NUM_OUTCOMES);
 
-		for (uint256 i = 0; i < Constants.NUM_OUTCOMES; i++) {
+		for (uint8 i = 0; i < Constants.NUM_OUTCOMES; i++) {
 			_tokenIds[i] = TokenId.getTokenId(_universeId, _marketId, i);
 			_values[i] = _amount;
 		}
@@ -70,10 +70,10 @@ contract ShareToken is ForkedERC1155 {
 		sisypheanExchange.withdraw(_universeId, address(this), _recipient, _amount * Constants.NUM_TICKS);
 	}
 
-	function claimTradingProceeds(uint256 _universeId, uint256 _marketId, address _owner, address _recipient) external {
+	function claimTradingProceeds(uint192 _universeId, uint56 _marketId, address _owner, address _recipient) external {
 		require(_owner == msg.sender || isApprovedForAll(_owner, msg.sender) == true, "ERC1155: need operator approval to claim proceeds");
 
-		uint256 _outcome = sisypheanExchange.getWinningOutcome(_universeId, _marketId);
+		uint8 _outcome = sisypheanExchange.getWinningOutcome(_universeId, _marketId);
 		uint256 _tokenId = getTokenId(_universeId, _marketId, _outcome);
 
 		uint256 _balance = balanceOf(_owner, _tokenId);
@@ -83,41 +83,41 @@ contract ShareToken is ForkedERC1155 {
 	}
 
 	function getUniverse(uint256 _tokenId) external pure returns(uint256) {
-		(uint256 _universe, uint256 _market, uint256 _outcome) = TokenId.unpackTokenId(_tokenId);
+		(uint192 _universe, uint56 _market, uint8 _outcome) = TokenId.unpackTokenId(_tokenId);
 		return _universe;
 	}
 
 	function getMarket(uint256 _tokenId) external pure returns(uint256) {
-		(uint256 _universe, uint256 _market, uint256 _outcome) = TokenId.unpackTokenId(_tokenId);
+		(uint192 _universe, uint56 _market, uint8 _outcome) = TokenId.unpackTokenId(_tokenId);
 		return _market;
 	}
 
 	function getOutcome(uint256 _tokenId) external pure returns(uint256) {
-		(uint256 _universe, uint256 _market, uint256 _outcome) = TokenId.unpackTokenId(_tokenId);
+		(uint192 _universe, uint56 _market, uint8 _outcome) = TokenId.unpackTokenId(_tokenId);
 		return _outcome;
 	}
 
-	function totalSupplyForMarketOutcome(uint256 _universeId, uint256 _market, uint256 _outcome) public view returns (uint256) {
+	function totalSupplyForMarketOutcome(uint192 _universeId, uint56 _market, uint8 _outcome) public view returns (uint256) {
 		uint256 _tokenId = getTokenId(_universeId, _market, _outcome);
 		return totalSupply(_tokenId);
 	}
 
-	function balanceOfMarketOutcome(uint256 _universeId, uint256 _market, uint256 _outcome, address _account) public view returns (uint256) {
+	function balanceOfMarketOutcome(uint192 _universeId, uint56 _market, uint8 _outcome, address _account) public view returns (uint256) {
 		uint256 _tokenId = getTokenId(_universeId, _market, _outcome);
 		return balanceOf(_account, _tokenId);
 	}
 
-	function balanceOfMarketShares(uint256 _universeId, uint256 _market, address _account) public view returns (uint256[3] memory balances) {
+	function balanceOfMarketShares(uint192 _universeId, uint56 _market, address _account) public view returns (uint256[3] memory balances) {
 		balances[0] = balanceOf(_account, getTokenId(_universeId, _market, 0));
 		balances[1] = balanceOf(_account, getTokenId(_universeId, _market, 1));
 		balances[2] = balanceOf(_account, getTokenId(_universeId, _market, 2));
 	}
 
-	function getTokenId(uint256 _universeId, uint256 _market, uint256 _outcome) public pure returns (uint256 _tokenId) {
+	function getTokenId(uint192 _universeId, uint56 _market, uint8 _outcome) public pure returns (uint256 _tokenId) {
 		return TokenId.getTokenId(_universeId, _market, _outcome);
 	}
 
-	function getTokenIds(uint256 _universeId, uint256 _market, uint256[] memory _outcomes) public pure returns (uint256[] memory _tokenIds) {
+	function getTokenIds(uint192 _universeId, uint56 _market, uint8[] memory _outcomes) public pure returns (uint256[] memory _tokenIds) {
 		return TokenId.getTokenIds(_universeId, _market, _outcomes);
 	}
 

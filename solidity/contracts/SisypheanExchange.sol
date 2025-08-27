@@ -14,33 +14,33 @@ contract SisypheanExchange is ForkedERC1155 {
 
 	struct Universe {
 		IERC20 reputationToken;
-		uint256 forkingMarket;
+		uint56 forkingMarket;
 		uint256 ethBalance;
 		uint256 forkTime;
 		uint256 ethBalanceDelta;
 	}
 
-	mapping(uint256 => Universe) public universes;
+	mapping(uint192 => Universe) public universes;
 
 	struct MarketData {
-		uint256 endTime;
+		uint64 endTime;
+		uint192 originUniverse;
 		address designatedReporter;
 		string extraInfo;
-		uint256 originUniverse;
 	}
 
 	struct MarketResolutionData {
 		address initialReporter;
-		uint256 outcome;
-		uint256 reportTime;
+		uint8 outcome;
+		uint64 reportTime;
 	}
 
-	mapping(uint256 => MarketData) public markets;
+	mapping(uint56 => MarketData) public markets;
 
 	// UniverseId => MarketId => Data
-	mapping(uint256 => mapping(uint256 => MarketResolutionData)) marketResolutions;
+	mapping(uint192 => mapping(uint56 => MarketResolutionData)) marketResolutions;
 
-	uint256 marketIdCounter = 0;
+	uint56 marketIdCounter = 0;
 
 	// TODO: Revist what behavior the bond should be
 	uint256 constant public REP_BOND = 1 ether;
@@ -63,25 +63,25 @@ contract SisypheanExchange is ForkedERC1155 {
 		);
 	}
 
-	function forked(uint256 universeId) external view returns (bool) {
+	function forked(uint192 universeId) external view returns (bool) {
 		return universeHasForked(universeId);
 	}
 
-	function universeHasForked(uint256 universeId) internal override view returns (bool) {
+	function universeHasForked(uint192 universeId) internal override view returns (bool) {
 		return universes[universeId].forkingMarket != 0;
 	}
 
-	function getUniverseId(uint256 id) internal override pure returns (uint256) {
-		return id;
+	function getUniverseId(uint256 id) internal override pure returns (uint192) {
+		return uint192(id);
 	}
 
-	function getChildId(uint256, uint256 newUniverse) internal override pure returns (uint256) {
+	function getChildId(uint256, uint192 newUniverse) internal override pure returns (uint256) {
 		return newUniverse;
 	}
 
 	// TODO: function to check market legitimacy in a universe. Should be required for initial reporting at minimum
 
-	function deposit(uint256 _universeId, address _recipient) public payable {
+	function deposit(uint192 _universeId, address _recipient) public payable {
 		Universe memory universe = universes[_universeId];
 		require(universe.forkingMarket == 0, "Universe is forked");
 		// TODO: Post Auction this isn't correct. 1:1 Cath to ETH cannot be assumed as auctions do not ensure equal balances of Cash and ETH
@@ -91,7 +91,7 @@ contract SisypheanExchange is ForkedERC1155 {
 	}
 
 	// TODO: withdraw should be allowed in forked universe for resolved markets. Market resolution should burn the CASH and issue the holder a different balance in some "resolved cash" token
-	function withdraw(uint256 _universeId, address _owner, address _recipient, uint256 _amount) public {
+	function withdraw(uint192 _universeId, address _owner, address _recipient, uint256 _amount) public {
 		Universe memory universe = universes[_universeId];
 		require(universe.forkingMarket == 0, "Universe is forked");
 		require(_owner == msg.sender || isApprovedForAll(_owner, msg.sender) == true, "ERC1155: need operator approval for 3rd party withdraw");
@@ -103,21 +103,21 @@ contract SisypheanExchange is ForkedERC1155 {
 		universes[_universeId] = universe;
 	}
 
-	function createMarket(uint256 _universeId, uint256 _endTime, address _designatedReporterAddress, string memory _extraInfo) public returns (uint256 _newMarket) {
+	function createMarket(uint192 _universeId, uint64 _endTime, address _designatedReporterAddress, string memory _extraInfo) public returns (uint56 _newMarket) {
 		Universe memory universe = universes[_universeId];
 		require(universe.forkingMarket == 0, "Universe is forked");
 		universe.reputationToken.transferFrom(msg.sender, address(this), REP_BOND);
-		uint256 _marketId = ++marketIdCounter;
+		uint56 _marketId = ++marketIdCounter;
 		markets[_marketId] = MarketData(
 			_endTime,
+			_universeId,
 			_designatedReporterAddress,
-			_extraInfo,
-			_universeId
+			_extraInfo
 		);
 		return _newMarket;
 	}
 
-	function reportOutcome(uint256 _universeId, uint256 _marketId, uint256 _outcome) external {
+	function reportOutcome(uint192 _universeId, uint56 _marketId, uint8 _outcome) external {
 		Universe memory universe = universes[_universeId];
 		require(universe.forkingMarket == 0, "Universe is forked");
 		MarketData memory marketData = markets[_marketId];
@@ -129,11 +129,11 @@ contract SisypheanExchange is ForkedERC1155 {
 
 		marketResolutions[_universeId][_marketId].initialReporter = msg.sender;
 		marketResolutions[_universeId][_marketId].outcome = _outcome;
-		marketResolutions[_universeId][_marketId].reportTime = block.timestamp;
+		marketResolutions[_universeId][_marketId].reportTime = uint64(block.timestamp);
 	}
 
 	// TODO: Handle REP staked in escalation game after fork
-	function returnRepBond(uint256 _universeId, uint256 _marketId) external {
+	function returnRepBond(uint192 _universeId, uint56 _marketId) external {
 		Universe memory universe = universes[_universeId];
 		MarketResolutionData memory marketResolutionData = marketResolutions[_universeId][_marketId];
 		require(marketResolutionDataIsFinalized(marketResolutionData), "Cannot withdraw REP bond before finalized");
@@ -141,7 +141,7 @@ contract SisypheanExchange is ForkedERC1155 {
 		universe.reputationToken.transfer(marketResolutionData.initialReporter, REP_BOND);
 	}
 
-	function isFinalized(uint256 _universeId, uint256 _marketId) external view returns (bool) {
+	function isFinalized(uint192 _universeId, uint56 _marketId) external view returns (bool) {
 		MarketResolutionData memory marketResolutionData = marketResolutions[_universeId][_marketId];
 		return marketResolutionDataIsFinalized(marketResolutionData);
 	}
@@ -150,7 +150,7 @@ contract SisypheanExchange is ForkedERC1155 {
 		return marketResolutionData.reportTime != 0 && block.timestamp > marketResolutionData.reportTime + DISPUTE_PERIOD;
 	}
 
-	function getWinningOutcome(uint256 _universeId, uint256 _marketId) public view returns (uint256) {
+	function getWinningOutcome(uint192 _universeId, uint56 _marketId) public view returns (uint8) {
 		MarketResolutionData memory marketResolutionData = marketResolutions[_universeId][_marketId];
 		require(marketResolutionDataIsFinalized(marketResolutionData), "Market is not finalized");
 
@@ -158,7 +158,7 @@ contract SisypheanExchange is ForkedERC1155 {
 	}
 
 	// TODO: Currently escalation game is a single dispute. Likely will be more complex.
-	function dispute(uint256 _universeId, uint256 _marketId, uint256 _outcome) external {
+	function dispute(uint192 _universeId, uint56 _marketId, uint8 _outcome) external {
 		Universe memory universe = universes[_universeId];
 		require(universe.forkingMarket == 0, "Universe is forked");
 		MarketResolutionData memory marketResolutionData = marketResolutions[_universeId][_marketId];
@@ -167,8 +167,8 @@ contract SisypheanExchange is ForkedERC1155 {
 
 		universe.reputationToken.transferFrom(msg.sender, address(this), REP_BOND * 2);
 
-		for (uint256 i = 1; i < 4; i++) {
-			uint256 childUniverseId = (_universeId << 4) + i;
+		for (uint8 i = 1; i < Constants.NUM_OUTCOMES + 1; i++) {
+			uint192 childUniverseId = (_universeId << 4) + i;
 			universes[childUniverseId] = Universe(
 				new ReputationToken(),
 				0,
@@ -185,7 +185,7 @@ contract SisypheanExchange is ForkedERC1155 {
 		universes[_universeId] = universe;
 	}
 
-	function migrateREP(uint256 universeId, uint256 amount, uint256 outcome) external {
+	function migrateREP(uint192 universeId, uint256 amount, uint8 outcome) external {
 		require(outcome < 3, "Invalid outcome");
 		Universe memory universe = universes[universeId];
 		require(block.timestamp < universe.forkTime + REP_MIGRATION_WINDOW, "Universe not in REP migration window");
@@ -200,7 +200,7 @@ contract SisypheanExchange is ForkedERC1155 {
 			ReputationToken(address(universe.reputationToken)).burn(msg.sender, amount);
 		}
 
-		uint256 childUniverseId = (universeId << 4) + outcome + 1;
+		uint192 childUniverseId = uint192((universeId << 2) + outcome + 1);
 		Universe memory childUniverse = universes[childUniverseId];
 		ReputationToken(address(childUniverse.reputationToken)).mint(msg.sender, amount);
 
@@ -211,7 +211,7 @@ contract SisypheanExchange is ForkedERC1155 {
 		universes[childUniverseId] = childUniverse;
 	}
 
-	function cashInREP(uint256 universeId) external {
+	function cashInREP(uint192 universeId) external {
 		Universe memory universe = universes[universeId];
 		require(universe.forkTime !=0 && block.timestamp > universe.forkTime + REP_MIGRATION_WINDOW, "Universe has not completed REP migration");
 
@@ -233,14 +233,14 @@ contract SisypheanExchange is ForkedERC1155 {
 		universes[universeId] = universe;
 	}
 
-	function buyFromAuction(uint256 forkingUniverseId, uint256 outcome) external payable {
+	function buyFromAuction(uint192 forkingUniverseId, uint256 outcome) external payable {
 		Universe memory forkingUniverse = universes[forkingUniverseId];
 		uint256 migrationEndTime = forkingUniverse.forkTime + REP_MIGRATION_WINDOW;
 		uint256 auctionEndTime = migrationEndTime + AUCTION_DURATION;
 		require(block.timestamp > migrationEndTime, "Universe still in REP migration window");
 		require(block.timestamp < auctionEndTime, "Universe not in Auction window");
 
-		uint256 childUniverseId = (forkingUniverseId << 4) + outcome + 1;
+		uint192 childUniverseId = uint192((forkingUniverseId << 2) + outcome + 1);
 		Universe memory childUniverse = universes[childUniverseId];
 
 		require(childUniverse.ethBalance > 0, "Auction complete");
