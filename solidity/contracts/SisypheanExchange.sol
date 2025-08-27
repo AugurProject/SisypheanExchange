@@ -167,7 +167,7 @@ contract SisypheanExchange is ForkedERC1155 {
 
 		universe.reputationToken.transferFrom(msg.sender, address(this), REP_BOND * 2);
 
-		for (uint8 i = 1; i < 4; i++) {
+		for (uint8 i = 1; i < Constants.NUM_OUTCOMES + 1; i++) {
 			uint192 childUniverseId = (_universeId << 4) + i;
 			universes[childUniverseId] = Universe(
 				new ReputationToken(),
