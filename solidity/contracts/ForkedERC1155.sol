@@ -1,6 +1,7 @@
 pragma solidity 0.8.30;
 
 import './ERC1155.sol';
+import './Constants.sol';
 
 abstract contract ForkedERC1155 is ERC1155 {
 
@@ -23,7 +24,7 @@ abstract contract ForkedERC1155 is ERC1155 {
 		_supplys[fromId] -= fromIdBalance;
 
 		// For each outcome universe
-		for (uint8 i = 1; i < 4; i++) {
+		for (uint8 i = 1; i < Constants.NUM_OUTCOMES + 1; i++) {
 			uint192 childUniverseId = (universeId << 2) + i;
 			uint256 toId = getChildId(fromId, childUniverseId);
 			_balances[toId][msg.sender] += fromIdBalance;
