@@ -2,7 +2,7 @@ import { describe, beforeEach, test } from 'node:test'
 import { getMockedEthSimulateWindowEthereum, MockWindowEthereum } from '../testsuite/simulator/MockWindowEthereum.js'
 import { createWriteClient } from '../testsuite/simulator/utils/viem.js'
 import { BURN_ADDRESS, DAY, GENESIS_REPUTATION_TOKEN, NUM_TICKS, REP_BOND, TEST_ADDRESSES } from '../testsuite/simulator/utils/constants.js'
-import { approveToken, buyCompleteSets, buyFromAuction, cashInREP, claimTradingProceeds, createMarket, dispute, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getERC20Supply, getETHBalance, getMarketData, getMarketShareTokenBalance, getShareTokenCashBalance, getSisypheanExchangeAddress, getTokenId, getUniverseData, initialTokenBalance, isFinalized, isSisypheanExchangeDeployed, migrateCash, migrateREP, migrateShareToken, reportOutcome, returnRepBond, sellCompleteSets, setupTestAccounts } from '../testsuite/simulator/utils/utilities.js'
+import { approveToken, buyCompleteSets, buyFromAuction, cashInREP, claimTradingProceeds, createMarket, dispute, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getERC20Supply, getETHBalance, getMarketData, getMarketShareTokenBalance, getShareTokenCashBalance, getSisypheanExchangeAddress, getTokenId, getUniverseData, getWinningOutcome, initialTokenBalance, isFinalized, isSisypheanExchangeDeployed, migrateCash, migrateREP, migrateShareToken, reportOutcome, returnRepBond, sellCompleteSets, setupTestAccounts } from '../testsuite/simulator/utils/utilities.js'
 import assert from 'node:assert'
 import { addressString } from '../testsuite/simulator/utils/bigint.js'
 
@@ -235,6 +235,16 @@ describe('Contract Test Suite', () => {
 		assert.notEqual(invalidUniverseData[0], addressString(0n), 'invalid universe not recognized or not initialized properly')
 		assert.notEqual(yesUniverseData[0], addressString(0n), 'yes universe not recognized or not initialized properly')
 		assert.notEqual(noUniverseData[0], addressString(0n), 'no universe not recognized or not initialized properly')
+
+		// The forking market is resolved to each respective outcome in the child universes
+
+		const invalidUniverseWinningOutcome = await getWinningOutcome(client, invalidUniverseId, marketId)
+		const yesUniverseWinningOutcome = await getWinningOutcome(client, yesUniverseId, marketId)
+		const noUniverseWinningOutcome = await getWinningOutcome(client, noUniverseId, marketId)
+
+		assert.strictEqual(invalidUniverseWinningOutcome, 0, "Invalid universe forking market outcome not as expected")
+		assert.strictEqual(yesUniverseWinningOutcome, 1, "Yes universe forking market outcome not as expected")
+		assert.strictEqual(noUniverseWinningOutcome, 2, "No universe forking market outcome not as expected")
 
 		// Initially Cash and share balances in the child universes are 0 and the fored universe still holds the same balance
 		const shareTokenCashInGenesis = await getShareTokenCashBalance(client, genesisUniverse)

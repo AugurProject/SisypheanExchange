@@ -415,7 +415,7 @@ export const getWinningOutcome = async (client: ReadClient, universe: bigint, ma
 		functionName: 'getWinningOutcome',
 		address: sisypheanExchangeAddress,
 		args: [universe, marketId]
-	}) as bigint
+	}) as number
 }
 
 export const getShareTokenCashBalance = async (client: ReadClient, universe: bigint) => {

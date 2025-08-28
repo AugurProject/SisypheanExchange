@@ -118,6 +118,7 @@ contract SisypheanExchange is ForkedERC1155 {
 	}
 
 	// TODO: withdraw should be allowed in forked universe for resolved markets. Market resolution should burn the CASH and issue the holder a different balance in some "resolved cash" token
+	// TODO: Restrict withdraw if rep migration / auction is happening in parent universe
 	function withdraw(uint192 _universeId, address _owner, address _recipient, uint256 _amount) public {
 		Universe memory universe = universes[_universeId];
 		require(universe.forkingMarket == 0, "Universe is forked");
@@ -203,9 +204,10 @@ contract SisypheanExchange is ForkedERC1155 {
 				0,
 				universe.ethBalance
 			);
-		}
 
-		// TODO resolve each in respective universe
+			marketResolutions[childUniverseId][_marketId].reportTime = 1;
+			marketResolutions[childUniverseId][_marketId].outcome = i - 1;
+		}
 
 		universe.forkingMarket = _marketId;
 		universe.forkTime = block.timestamp;
