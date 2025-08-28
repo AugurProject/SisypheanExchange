@@ -2,7 +2,7 @@ import { describe, beforeEach, test } from 'node:test'
 import { getMockedEthSimulateWindowEthereum, MockWindowEthereum } from '../testsuite/simulator/MockWindowEthereum.js'
 import { createWriteClient } from '../testsuite/simulator/utils/viem.js'
 import { BURN_ADDRESS, DAY, GENESIS_REPUTATION_TOKEN, NUM_TICKS, REP_BOND, TEST_ADDRESSES } from '../testsuite/simulator/utils/constants.js'
-import { approveToken, buyCompleteSets, buyFromAuction, cashInREP, claimTradingProceeds, createMarket, dispute, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getERC20Supply, getETHBalance, getMarketData, getMarketShareTokenBalance, getShareTokenCashBalance, getSisypheanExchangeAddress, getTokenId, getUniverseData, getWinningOutcome, initialTokenBalance, isFinalized, isSisypheanExchangeDeployed, migrateCash, migrateREP, migrateShareToken, reportOutcome, returnRepBond, sellCompleteSets, setupTestAccounts } from '../testsuite/simulator/utils/utilities.js'
+import { approveToken, buyCompleteSets, buyFromAuction, cashInREP, claimTradingProceeds, createMarket, dispute, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getERC20Supply, getETHBalance, getMarketData, getMarketShareTokenBalance, getShareTokenCashBalance, getSisypheanExchangeAddress, getTokenId, getUniverseData, getWinningOutcome, initialTokenBalance, isFinalized, isSisypheanExchangeDeployed, migrateCash, migrateREP, migrateShareToken, migrateStakedRep, reportOutcome, returnRepBond, sellCompleteSets, setupTestAccounts } from '../testsuite/simulator/utils/utilities.js'
 import assert from 'node:assert'
 import { addressString } from '../testsuite/simulator/utils/bigint.js'
 
@@ -207,8 +207,7 @@ describe('Contract Test Suite', () => {
 		const client1ForkedMarkethareTokenBalances = await getMarketShareTokenBalance(client, genesisUniverse, marketId, client.account.address)
 
 		// We'll create a second market and buy complete sets with both users as well
-		const endTime2 = curentTimestamp + (DAY * 30n)
-		await createMarket(client, genesisUniverse, endTime2, "test 2")
+		await createMarket(client, genesisUniverse, endTime, "test 2")
 
 		const marketId2 = 2n
 		await buyCompleteSets(client, genesisUniverse, marketId2, client.account.address, amountToBuy)
@@ -220,6 +219,9 @@ describe('Contract Test Suite', () => {
 
 		const initialOutcome = 1n
 		await reportOutcome(client, genesisUniverse, marketId, initialOutcome)
+
+		// We'll also report on the second market
+		await reportOutcome(client, genesisUniverse, marketId2, initialOutcome)
 
 		const disputeOutcome = 2n
 		await dispute(client2, genesisUniverse, marketId, disputeOutcome)
@@ -319,7 +321,19 @@ describe('Contract Test Suite', () => {
 		const correspondingETH = repMigrationAmount * genesisETHBalance / totalREP;
 		const expectedGenesisETHBalance = genesisETHBalance - correspondingETH
 		assert.strictEqual(genesisETHBalanceAfterMigration, expectedGenesisETHBalance, "Genesis ETH balance not as expected after REP migration")
-		assert.strictEqual(noUniverseETHBalanceAfterMigration, correspondingETH, "N) universe ETH balance not as expected after REP migration")
+		assert.strictEqual(noUniverseETHBalanceAfterMigration, correspondingETH, "NO universe ETH balance not as expected after REP migration")
+
+		// We can migrate the REP staked in the other market
+		await migrateStakedRep(client, genesisUniverse, marketId2, 2n)
+
+		const genesisETHBalanceAfterStakedMigration = (await getUniverseData(client, genesisUniverse))[2]
+		const noUniverseETHBalanceAfterStakedMigration = (await getUniverseData(client, noUniverseId))[2]
+
+		const correspondingETHAfterMigration = REP_BOND * expectedGenesisETHBalance / (totalREP - repBurnedAfterMigration);
+		const expectedGenesisETHBalanceAfterStakedMigration = genesisETHBalanceAfterMigration - correspondingETHAfterMigration
+
+		assert.strictEqual(genesisETHBalanceAfterStakedMigration, expectedGenesisETHBalanceAfterStakedMigration, "Genesis ETH balance not as expected after staked REP migration")
+		assert.strictEqual(noUniverseETHBalanceAfterStakedMigration, correspondingETH + correspondingETHAfterMigration, "NO universe ETH balance not as expected after staked REP migration")
 
 		// We cannot participate in the REP auction yet
 		const ethBalanceDelta = (await getUniverseData(client, noUniverseId))[4]
@@ -337,7 +351,7 @@ describe('Contract Test Suite', () => {
 		await cashInREP(client, genesisUniverse)
 
 		const genesisETHBalanceAfterREPCashIn = (await getUniverseData(client, genesisUniverse))[2]
-		const expectedGenesisETHBalanceAfterREPCashIn = genesisETHBalanceAfterMigration - expectedETHPayout
+		const expectedGenesisETHBalanceAfterREPCashIn = genesisETHBalanceAfterStakedMigration - expectedETHPayout
 		assert.strictEqual(genesisETHBalanceAfterREPCashIn, expectedGenesisETHBalanceAfterREPCashIn, "Genesis ETH balance not as expected after REP cash in")
 
 		// Wait a day for auction to increase REP payout

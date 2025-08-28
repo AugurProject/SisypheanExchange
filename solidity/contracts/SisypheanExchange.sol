@@ -160,13 +160,20 @@ contract SisypheanExchange is ForkedERC1155 {
 		marketResolutions[_universeId][_marketId].reportTime = uint64(block.timestamp);
 	}
 
-	// TODO: Handle REP staked in escalation game after fork
 	function returnRepBond(uint192 _universeId, uint56 _marketId) external {
 		Universe memory universe = universes[_universeId];
 		MarketResolutionData memory marketResolutionData = marketResolutions[_universeId][_marketId];
 		require(marketResolutionDataIsFinalized(marketResolutionData), "Cannot withdraw REP bond before finalized");
 
 		universe.reputationToken.transfer(marketResolutionData.initialReporter, REP_BOND);
+	}
+
+	function migrateStakedRep(uint192 _universeId, uint56 _marketId, uint8 _outcome) external {
+		MarketResolutionData memory marketResolutionData = marketResolutions[_universeId][_marketId];
+		require(marketResolutionData.reportTime != 0, "No REP staked in this market");
+		require(!marketResolutionDataIsFinalized(marketResolutionData), "Cannot migrate REP from finalized market");
+
+		migrateREPInternal(_universeId, REP_BOND, _outcome, address(this), marketResolutionData.initialReporter);
 	}
 
 	function isFinalized(uint192 _universeId, uint56 _marketId) external view returns (bool) {
@@ -214,7 +221,11 @@ contract SisypheanExchange is ForkedERC1155 {
 		universes[_universeId] = universe;
 	}
 
-	function migrateREP(uint192 universeId, uint256 amount, uint8 outcome) external {
+	function migrateREP(uint192 universeId, uint256 amount, uint8 outcome) public {
+		migrateREPInternal(universeId, amount, outcome, msg.sender, msg.sender);
+	}
+
+	function migrateREPInternal(uint192 universeId, uint256 amount, uint8 outcome, address migrator, address recipient) internal {
 		require(outcome < 3, "Invalid outcome");
 		Universe memory universe = universes[universeId];
 		require(block.timestamp < universe.forkTime + REP_MIGRATION_WINDOW, "Universe not in REP migration window");
@@ -224,14 +235,18 @@ contract SisypheanExchange is ForkedERC1155 {
 
 		// Genesis is using REPv2 which we cannot actually burn
 		if (universeId == 0) {
-			universe.reputationToken.transferFrom(msg.sender, Constants.BURN_ADDRESS, amount);
+			if (migrator == address(this)) {
+				universe.reputationToken.transfer(Constants.BURN_ADDRESS, amount);
+			} else {
+				universe.reputationToken.transferFrom(migrator, Constants.BURN_ADDRESS, amount);
+			}
 		} else {
-			ReputationToken(address(universe.reputationToken)).burn(msg.sender, amount);
+			ReputationToken(address(universe.reputationToken)).burn(migrator, amount);
 		}
 
 		uint192 childUniverseId = uint192((universeId << 2) + outcome + 1);
 		Universe memory childUniverse = universes[childUniverseId];
-		ReputationToken(address(childUniverse.reputationToken)).mint(msg.sender, amount);
+		ReputationToken(address(childUniverse.reputationToken)).mint(recipient, amount);
 
 		universe.ethBalance -= correspondingETH;
 		childUniverse.ethBalance += correspondingETH;
