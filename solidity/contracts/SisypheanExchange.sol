@@ -8,6 +8,7 @@ import './ReputationToken.sol';
 import './IERC20.sol';
 
 // NOTE: Currently a resolved market could be traded on and resolved again in a child universe. We can add things to prevent this if needed.
+
 // NOTE: We need a mechanism for having certain Cash be 1:1 while other existing cash is potentially a different ratio. Consider someone putting 1 eth into a complete set in a market and it migrating while unresolved in a fork. Post auction lets say it hit 90% fulfilment. The original complete set should provide .9 ETH in return but a new purchaser should be able to buy a complete set worth 1 ETH.
 
 contract SisypheanExchange is ForkedERC1155 {
@@ -79,7 +80,33 @@ contract SisypheanExchange is ForkedERC1155 {
 		return newUniverse;
 	}
 
-	// TODO: function to check market legitimacy in a universe. Should be required for initial reporting at minimum
+	function isMarketLegit(uint192 _universeId, uint56 _marketId) public view returns (bool) {
+		MarketData memory marketData = markets[_marketId];
+		require(marketData.endTime != 0, "Market is not valid");
+
+		if (marketData.originUniverse == _universeId) return true;
+
+		// NOTE: When market OI is recorded if we want to restrict OI deposits we could do a short circuit check here as that means it passed legitimacy in some previous call
+
+		Universe memory universeData = universes[_universeId];
+		require(address(universeData.reputationToken) != address(0), "Universe is not valid");
+
+		do {
+			_universeId >>= 2;
+			// If a parent didn't fork this wouldn't be a valid universe
+			Universe memory curUniverseData = universes[_universeId];
+			if (curUniverseData.forkTime == 0) return false;
+
+			// A resolved market cannot have children, as a market in a forked universe does not get resolved there
+			MarketResolutionData memory marketResolutionData = marketResolutions[_universeId][_marketId];
+			if (marketResolutionDataIsFinalized(marketResolutionData)) return false;
+
+			// If other checks passed and the ids are equal its a legitimate child. If this never gets reached it isn't.
+			if (marketData.originUniverse == _universeId) return true;
+		} while (_universeId > 0);
+
+		return false;
+	}
 
 	function deposit(uint192 _universeId, address _recipient) public payable {
 		Universe memory universe = universes[_universeId];
@@ -168,7 +195,7 @@ contract SisypheanExchange is ForkedERC1155 {
 		universe.reputationToken.transferFrom(msg.sender, address(this), REP_BOND * 2);
 
 		for (uint8 i = 1; i < Constants.NUM_OUTCOMES + 1; i++) {
-			uint192 childUniverseId = (_universeId << 4) + i;
+			uint192 childUniverseId = (_universeId << 2) + i;
 			universes[childUniverseId] = Universe(
 				new ReputationToken(),
 				0,
