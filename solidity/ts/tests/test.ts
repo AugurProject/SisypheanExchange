@@ -2,7 +2,7 @@ import { describe, beforeEach, test } from 'node:test'
 import { getMockedEthSimulateWindowEthereum, MockWindowEthereum } from '../testsuite/simulator/MockWindowEthereum.js'
 import { createWriteClient } from '../testsuite/simulator/utils/viem.js'
 import { BURN_ADDRESS, DAY, GENESIS_REPUTATION_TOKEN, NUM_TICKS, REP_BOND, TEST_ADDRESSES } from '../testsuite/simulator/utils/constants.js'
-import { approveToken, buyCompleteSets, buyFromAuction, cashInREP, claimTradingProceeds, createMarket, dispute, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getERC20Supply, getETHBalance, getMarketData, getMarketShareTokenBalance, getShareTokenCashBalance, getSisypheanExchangeAddress, getTokenId, getUniverseData, getWinningOutcome, initialTokenBalance, isFinalized, isSisypheanExchangeDeployed, migrateCash, migrateREP, migrateShareToken, migrateStakedRep, reportOutcome, returnRepBond, sellCompleteSets, setupTestAccounts } from '../testsuite/simulator/utils/utilities.js'
+import { approveToken, buyCompleteSets, buyFromAuction, cashInREP, claimTradingProceeds, createMarket, dispute, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getERC20Supply, getETHBalance, getMarketData, getMarketShareTokenBalance, getShareTokenCashBalance, getSisypheanExchangeAddress, getTokenId, getUniverseData, getWinningOutcome, initialTokenBalance, isFinalized, isSisypheanExchangeDeployed, migrateCash, migrateREP, migrateShareToken, migrateStakedRep, reportOutcome, returnRepBond, sellCompleteSets, setupTestAccounts, triggerAuctionFinished } from '../testsuite/simulator/utils/utilities.js'
 import assert from 'node:assert'
 import { addressString } from '../testsuite/simulator/utils/bigint.js'
 
@@ -370,5 +370,86 @@ describe('Contract Test Suite', () => {
 		const fudgeForTime = 100n * repAuctionScale
 		const payoutDelta = actualREPPayout - expectedREPPayout
 		assert.ok(payoutDelta > 0 && payoutDelta < fudgeForTime, "User did not recieve expected REP from auction")
+	})
+
+	test('canAccountAfterAuctionCorrectly', async () => {
+		const client = createWriteClient(mockWindow, TEST_ADDRESSES[0], 0)
+		const client2 = createWriteClient(mockWindow, TEST_ADDRESSES[1], 0)
+		await ensureSisypheanExchangeDeployed(client)
+		await ensureShareTokenDeployed(client)
+		const sisEx = getSisypheanExchangeAddress()
+		const genesisUniverse = 0n
+
+		await approveToken(client, addressString(GENESIS_REPUTATION_TOKEN), sisEx)
+		await approveToken(client2, addressString(GENESIS_REPUTATION_TOKEN), sisEx)
+
+		const endTime = curentTimestamp + DAY
+		await createMarket(client, genesisUniverse, endTime, "test")
+
+		const marketId = 1n
+		const amountToBuy = 10n**18n
+		await buyCompleteSets(client, genesisUniverse, marketId, client.account.address, amountToBuy)
+
+		await mockWindow.advanceTime(DAY)
+
+		const initialOutcome = 1n
+		await reportOutcome(client, genesisUniverse, marketId, initialOutcome)
+
+		const disputeOutcome = 2n
+		await dispute(client2, genesisUniverse, marketId, disputeOutcome)
+
+		await migrateCash(client, genesisUniverse)
+
+		// migrate REP from client 1 to NO universe
+		const client1REPBalance = await getERC20Balance(client, addressString(GENESIS_REPUTATION_TOKEN), client.account.address)
+		await migrateREP(client, genesisUniverse, client1REPBalance, 2n)
+
+		// migrate REP from client 2 to YES universe
+		const client2REPBalance = await getERC20Balance(client2, addressString(GENESIS_REPUTATION_TOKEN), client2.account.address)
+		await migrateREP(client2, genesisUniverse, client2REPBalance, 1n)
+
+		// End rep migration period
+		await mockWindow.advanceTime(7n * DAY + 1n)
+
+		// Wait until auction has failed
+		await mockWindow.advanceTime(7n * DAY + 1n)
+
+		// Trigger auction finished
+		await triggerAuctionFinished(client, genesisUniverse)
+
+		const yesUniverseId = 2n
+		const noUniverseId = 3n
+
+		const client2EthBalance = await getETHBalance(client2, client2.account.address)
+
+		// Client 2 buys complete sets in the YES universe and trades in the winning Yes shares for a full payout
+		await buyCompleteSets(client2, yesUniverseId, marketId, client2.account.address, amountToBuy)
+
+		await claimTradingProceeds(client2, yesUniverseId, marketId, client2.account.address, client2.account.address)
+
+		const client2EthBalanceAfterClaim = await getETHBalance(client2, client2.account.address)
+
+		const gasFudge = 10n**15n
+
+		assert.ok(client2EthBalance - client2EthBalanceAfterClaim < gasFudge, "Client 2 claim did not return expected ETH");
+
+		// Client 1 sells No shares in No universe for the corresponding partial payout
+		const forkedMarketNoId = await getTokenId(client, genesisUniverse, marketId, 2n)
+		await migrateShareToken(client, forkedMarketNoId)
+
+		const clientShareBalances = await getMarketShareTokenBalance(client, noUniverseId, marketId, client.account.address)
+		const noUniverseData = await getUniverseData(client, noUniverseId)
+
+		const ethForCash = noUniverseData[6]
+
+		const clientEthBalance = await getETHBalance(client, client.account.address)
+
+		await claimTradingProceeds(client, noUniverseId, marketId, client.account.address, client.account.address)
+
+		const clientEthBalanceAfterClaim = await getETHBalance(client, client.account.address)
+		const expectedPayout = clientShareBalances[2] * ethForCash / 10n**18n
+		const expectedFinalETHBalance = clientEthBalance + expectedPayout
+
+		assert.ok(expectedFinalETHBalance - clientEthBalanceAfterClaim < gasFudge, "Client claim did not return expected ETH");
 	})
 })
