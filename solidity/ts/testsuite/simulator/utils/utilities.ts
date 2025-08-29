@@ -398,6 +398,17 @@ export const buyFromAuction = async (client: WriteClient, universe: bigint, outc
 	})
 }
 
+export const migrateStakedRep = async (client: WriteClient, universe: bigint, market: bigint, outcome: bigint) => {
+	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
+	return await client.writeContract({
+		chain: mainnet,
+		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
+		functionName: 'migrateStakedRep',
+		address: sisypheanExchangeAddress,
+		args: [universe, market, outcome]
+	})
+}
+
 export const isFinalized = async (client: ReadClient, universe: bigint, marketId: bigint) => {
 	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
 	return await client.readContract({
@@ -415,7 +426,7 @@ export const getWinningOutcome = async (client: ReadClient, universe: bigint, ma
 		functionName: 'getWinningOutcome',
 		address: sisypheanExchangeAddress,
 		args: [universe, marketId]
-	}) as bigint
+	}) as number
 }
 
 export const getShareTokenCashBalance = async (client: ReadClient, universe: bigint) => {
