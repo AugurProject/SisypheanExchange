@@ -42,14 +42,14 @@ contract ShareToken is ForkedERC1155 {
 	function buyCompleteSets(uint192 _universeId, uint56 _marketId, address _account, uint256 _amount) external payable {
 		uint256 _cost = _amount * Constants.NUM_TICKS;
 		require(_cost == msg.value, "Sent Ether is not equal to complete set purchase cost");
-		sisypheanExchange.deposit{value: msg.value}(_universeId, address(this));
+		uint256 correspondingCash = sisypheanExchange.deposit{value: msg.value}(_universeId, address(this));
 
 		uint256[] memory _tokenIds = new uint256[](Constants.NUM_OUTCOMES);
 		uint256[] memory _values = new uint256[](Constants.NUM_OUTCOMES);
 
 		for (uint8 _i = 0; _i < Constants.NUM_OUTCOMES; _i++) {
 			_tokenIds[_i] = TokenId.getTokenId(_universeId, _marketId, _i);
-			_values[_i] = _amount;
+			_values[_i] = correspondingCash / Constants.NUM_TICKS;
 		}
 
 		_mintBatch(_account, _tokenIds, _values);
