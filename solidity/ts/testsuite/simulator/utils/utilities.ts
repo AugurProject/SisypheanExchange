@@ -3,7 +3,7 @@ import { getContractAddress, numberToBytes, encodeAbiParameters, keccak256, Abi 
 import { mainnet } from 'viem/chains'
 import { promises as fs } from 'fs'
 import { ReadClient, WriteClient } from './viem.js'
-import { GENESIS_REPUTATION_TOKEN, NUM_TICKS, PROXY_DEPLOYER_ADDRESS, TEST_ADDRESSES } from './constants.js'
+import { GENESIS_REPUTATION_TOKEN, PROXY_DEPLOYER_ADDRESS, TEST_ADDRESSES } from './constants.js'
 import { addressString } from './bigint.js'
 import { Address } from 'viem'
 import { ABIS } from '../../../abi/abis.js'
@@ -458,8 +458,8 @@ export const buyCompleteSets = async (client: WriteClient, universe: bigint, mar
 		abi: contractsArtifact.contracts['contracts/ShareToken.sol'].ShareToken.abi as Abi,
 		functionName: 'buyCompleteSets',
 		address: shareTokenAddress,
-		value: amount * NUM_TICKS,
-		args: [universe, marketId, account, amount]
+		value: amount,
+		args: [universe, marketId, account]
 	})
 }
 

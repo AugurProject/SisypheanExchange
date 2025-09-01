@@ -1,7 +1,7 @@
 import { describe, beforeEach, test } from 'node:test'
 import { getMockedEthSimulateWindowEthereum, MockWindowEthereum } from '../testsuite/simulator/MockWindowEthereum.js'
 import { createWriteClient } from '../testsuite/simulator/utils/viem.js'
-import { BURN_ADDRESS, DAY, GENESIS_REPUTATION_TOKEN, NUM_TICKS, REP_BOND, TEST_ADDRESSES } from '../testsuite/simulator/utils/constants.js'
+import { BURN_ADDRESS, DAY, GENESIS_REPUTATION_TOKEN, REP_BOND, TEST_ADDRESSES } from '../testsuite/simulator/utils/constants.js'
 import { approveToken, buyCompleteSets, buyFromAuction, cashInREP, claimTradingProceeds, createMarket, dispute, ensureShareTokenDeployed, ensureSisypheanExchangeDeployed, getERC20Balance, getERC20Supply, getETHBalance, getMarketData, getMarketShareTokenBalance, getShareTokenCashBalance, getSisypheanExchangeAddress, getTokenId, getUniverseData, getWinningOutcome, initialTokenBalance, isFinalized, isSisypheanExchangeDeployed, migrateCash, migrateREP, migrateShareToken, migrateStakedRep, reportOutcome, returnRepBond, sellCompleteSets, setupTestAccounts, triggerAuctionFinished } from '../testsuite/simulator/utils/utilities.js'
 import assert from 'node:assert'
 import { addressString } from '../testsuite/simulator/utils/bigint.js'
@@ -69,8 +69,8 @@ describe('Contract Test Suite', () => {
 		assert.strictEqual(shareTokenBalancesBeforeBuy[1], 0n, "Initial share balance not 0")
 		assert.strictEqual(shareTokenBalancesBeforeBuy[2], 0n, "Initial share balance not 0")
 
-		const amountToBuy = 1000n
-		const costToBuy = amountToBuy * NUM_TICKS
+		const amountToBuy = 1000000n
+		const costToBuy = amountToBuy
 
 		await buyCompleteSets(client, genesisUniverse, marketId, client.account.address, amountToBuy)
 
@@ -106,7 +106,7 @@ describe('Contract Test Suite', () => {
 		await createMarket(client, genesisUniverse, endTime, "test")
 
 		const marketId = 1n
-		const amountToBuy = 10n**18n
+		const amountToBuy = 1000n * 10n**18n
 		await buyCompleteSets(client, genesisUniverse, marketId, client.account.address, amountToBuy)
 
 		const winningOutcome = 1n
@@ -141,8 +141,8 @@ describe('Contract Test Suite', () => {
 		const universeEthBalanceAfterClaim = await getETHBalance(client, sisEx)
 		const winnerEthBalanceAfterClaim = await getETHBalance(client, otherAccount)
 
-		assert.strictEqual(universeEthBalanceAfterClaim, universeEthBalanceBeforeClaim - (amountToBuy * NUM_TICKS), "ETH not taken from universe properly from claim trading proceeds call")
-		assert.strictEqual(winnerEthBalanceAfterClaim, winnerEthBalanceBeforeClaim + (amountToBuy * NUM_TICKS), "ETH not claimed properly from claim trading proceeds call")
+		assert.strictEqual(universeEthBalanceAfterClaim, universeEthBalanceBeforeClaim - (amountToBuy), "ETH not taken from universe properly from claim trading proceeds call")
+		assert.strictEqual(winnerEthBalanceAfterClaim, winnerEthBalanceBeforeClaim + (amountToBuy), "ETH not claimed properly from claim trading proceeds call")
 	})
 
 	test('canInitialReport', async () => {
@@ -202,7 +202,7 @@ describe('Contract Test Suite', () => {
 		await createMarket(client, genesisUniverse, endTime, "test")
 
 		const marketId = 1n
-		const amountToBuy = 10n**18n
+		const amountToBuy = 1000n * 10n**18n
 		await buyCompleteSets(client, genesisUniverse, marketId, client.account.address, amountToBuy)
 		const client1ForkedMarkethareTokenBalances = await getMarketShareTokenBalance(client, genesisUniverse, marketId, client.account.address)
 
@@ -254,7 +254,7 @@ describe('Contract Test Suite', () => {
 		const shareTokenCashInYes = await getShareTokenCashBalance(client, yesUniverseId)
 		const shareTokenCashInNo = await getShareTokenCashBalance(client, noUniverseId)
 
-		const totalSetCosts = amountToBuy * 3n * NUM_TICKS
+		const totalSetCosts = amountToBuy * 3n
 		assert.strictEqual(shareTokenCashInGenesis, totalSetCosts, "Cash balance of Genesis Universe not as expected")
 		assert.strictEqual(shareTokenCashInInvalid, 0n, "Invalid universe cash not as expected")
 		assert.strictEqual(shareTokenCashInYes, 0n, "Yes universe cash not as expected")
@@ -387,7 +387,7 @@ describe('Contract Test Suite', () => {
 		await createMarket(client, genesisUniverse, endTime, "test")
 
 		const marketId = 1n
-		const amountToBuy = 10n**18n
+		const amountToBuy = 1000n * 10n**18n
 		await buyCompleteSets(client, genesisUniverse, marketId, client.account.address, amountToBuy)
 
 		await mockWindow.advanceTime(DAY)

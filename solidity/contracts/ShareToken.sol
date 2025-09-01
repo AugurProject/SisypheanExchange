@@ -39,9 +39,7 @@ contract ShareToken is ForkedERC1155 {
 		sisypheanExchange.migrate(fromUniverseId);
 	}
 
-	function buyCompleteSets(uint192 _universeId, uint56 _marketId, address _account, uint256 _amount) external payable {
-		uint256 _cost = _amount * Constants.NUM_TICKS;
-		require(_cost == msg.value, "Sent Ether is not equal to complete set purchase cost");
+	function buyCompleteSets(uint192 _universeId, uint56 _marketId, address _account) external payable {
 		uint256 correspondingCash = sisypheanExchange.deposit{value: msg.value}(_universeId, address(this));
 
 		uint256[] memory _tokenIds = new uint256[](Constants.NUM_OUTCOMES);
@@ -49,7 +47,7 @@ contract ShareToken is ForkedERC1155 {
 
 		for (uint8 _i = 0; _i < Constants.NUM_OUTCOMES; _i++) {
 			_tokenIds[_i] = TokenId.getTokenId(_universeId, _marketId, _i);
-			_values[_i] = correspondingCash / Constants.NUM_TICKS;
+			_values[_i] = correspondingCash;
 		}
 
 		_mintBatch(_account, _tokenIds, _values);
@@ -67,7 +65,7 @@ contract ShareToken is ForkedERC1155 {
 		}
 
 		_burnBatch(_owner, _tokenIds, _values);
-		sisypheanExchange.withdraw(_universeId, address(this), _recipient, _amount * Constants.NUM_TICKS);
+		sisypheanExchange.withdraw(_universeId, address(this), _recipient, _amount);
 	}
 
 	function claimTradingProceeds(uint192 _universeId, uint56 _marketId, address _owner, address _recipient) external {
@@ -79,7 +77,7 @@ contract ShareToken is ForkedERC1155 {
 		uint256 _balance = balanceOf(_owner, _tokenId);
 		_burn(_owner, _tokenId, _balance);
 
-		sisypheanExchange.withdraw(_universeId, address(this), _recipient, _balance * Constants.NUM_TICKS);
+		sisypheanExchange.withdraw(_universeId, address(this), _recipient, _balance);
 	}
 
 	function getUniverse(uint256 _tokenId) external pure returns(uint256) {
