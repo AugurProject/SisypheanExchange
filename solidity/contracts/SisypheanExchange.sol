@@ -9,8 +9,6 @@ import './IERC20.sol';
 
 // NOTE: Currently a resolved market could be traded on and resolved again in a child universe. We can add things to prevent this if needed.
 
-// NOTE: We need a mechanism for having certain Cash be 1:1 while other existing cash is potentially a different ratio. Consider someone putting 1 eth into a complete set in a market and it migrating while unresolved in a fork. Post auction lets say it hit 90% fulfilment. The original complete set should provide .9 ETH in return but a new purchaser should be able to buy a complete set worth 1 ETH.
-
 contract SisypheanExchange is ForkedERC1155 {
 
 	struct Universe {
@@ -19,6 +17,8 @@ contract SisypheanExchange is ForkedERC1155 {
 		uint256 ethBalance;
 		uint256 forkTime;
 		uint256 ethBalanceDelta;
+		bool auctionFinished;
+		uint256 ethForCash;
 	}
 
 	mapping(uint192 => Universe) public universes;
@@ -60,7 +60,9 @@ contract SisypheanExchange is ForkedERC1155 {
 			0,
 			0,
 			0,
-			0
+			0,
+			true,
+			1 ether
 		);
 	}
 
@@ -108,26 +110,27 @@ contract SisypheanExchange is ForkedERC1155 {
 		return false;
 	}
 
-	function deposit(uint192 _universeId, address _recipient) public payable {
+	function deposit(uint192 _universeId, address _recipient) public payable returns (uint256 correspondingCash) {
 		Universe memory universe = universes[_universeId];
 		require(universe.forkingMarket == 0, "Universe is forked");
-		// TODO: Post Auction this isn't correct. 1:1 Cath to ETH cannot be assumed as auctions do not ensure equal balances of Cash and ETH
-		_mint(_recipient, _universeId, msg.value);
+		require(universe.auctionFinished, "Auction not finished");
+		correspondingCash = msg.value * 1 ether / universe.ethForCash;
+		_mint(_recipient, _universeId, correspondingCash);
 		universe.ethBalance += msg.value;
 		universes[_universeId] = universe;
 	}
 
 	// TODO: withdraw should be allowed in forked universe for resolved markets. Market resolution should burn the CASH and issue the holder a different balance in some "resolved cash" token
-	// TODO: Restrict withdraw if rep migration / auction is happening in parent universe
 	function withdraw(uint192 _universeId, address _owner, address _recipient, uint256 _amount) public {
 		Universe memory universe = universes[_universeId];
 		require(universe.forkingMarket == 0, "Universe is forked");
+		require(universe.auctionFinished, "Auction not finished");
 		require(_owner == msg.sender || isApprovedForAll(_owner, msg.sender) == true, "ERC1155: need operator approval for 3rd party withdraw");
-		// TODO: Post Auction this isn't correct. 1:1 Cath to ETH cannot be assumed as auctions do not ensure equal balances of Cash and ETH
 		_burn(_owner, _universeId, _amount);
-		(bool success, bytes memory data) = _recipient.call{value: _amount}("");
+		uint256 correspondingETH = universe.ethForCash * _amount / 1 ether;
+		(bool success, bytes memory data) = _recipient.call{value: correspondingETH}("");
 		require(success, "Failed to send Ether");
-		universe.ethBalance -= _amount;
+		universe.ethBalance -= correspondingETH;
 		universes[_universeId] = universe;
 	}
 
@@ -208,7 +211,9 @@ contract SisypheanExchange is ForkedERC1155 {
 				0,
 				0,
 				0,
-				universe.ethBalance
+				universe.ethBalance,
+				false,
+				0
 			);
 
 			marketResolutions[childUniverseId][_marketId].reportTime = 1;
@@ -297,6 +302,25 @@ contract SisypheanExchange is ForkedERC1155 {
 
 		childUniverse.ethBalance += msg.value;
 		childUniverse.ethBalanceDelta = 0;
+		childUniverse.auctionFinished = true;
+		childUniverse.ethForCash = 1 ether;
 		universes[childUniverseId] = childUniverse;
+	}
+
+	function triggerAuctionFinished(uint192 forkingUniverseId) external {
+		Universe memory forkingUniverse = universes[forkingUniverseId];
+		uint256 auctionEndTime = forkingUniverse.forkTime + REP_MIGRATION_WINDOW + AUCTION_DURATION;
+		require(block.timestamp > auctionEndTime, "Universe not finished with Auction");
+
+		// Some cash may have migrated. Since migration sends an equal balance to each universe its sufficient to just get the supply on the invalid child to account for this
+		uint256 totalCashSupply = totalSupply(forkingUniverseId) + totalSupply((forkingUniverseId << 2) + 1);
+
+		for (uint8 i = 1; i < Constants.NUM_OUTCOMES + 1; i++) {
+			uint192 childUniverseId = (forkingUniverseId << 2) + i;
+			Universe memory childUniverse = universes[childUniverseId];
+			childUniverse.auctionFinished = true;
+			childUniverse.ethForCash = 1 ether * childUniverse.ethBalance / totalCashSupply;
+			universes[childUniverseId] = childUniverse;
+		}
 	}
 }
