@@ -199,10 +199,12 @@ contract SisypheanExchange is ForkedERC1155 {
 		Universe memory universe = universes[_universeId];
 		require(universe.forkingMarket == 0, "Universe is forked");
 		MarketResolutionData memory marketResolutionData = marketResolutions[_universeId][_marketId];
+		uint8 initialReportOutcome = marketResolutionData.outcome;
+		require(_outcome != initialReportOutcome, "Dispute must be for a different outcome than the currently winning one");
 		require(block.timestamp < marketResolutionData.reportTime + DISPUTE_PERIOD, "Market not in dispute window");
 		require(_outcome < 3, "Invalid outcome");
 
-		universe.reputationToken.transferFrom(msg.sender, address(this), REP_BOND * 2);
+		uint256 disputeStake = REP_BOND * 2;
 
 		for (uint8 i = 1; i < Constants.NUM_OUTCOMES + 1; i++) {
 			uint192 childUniverseId = (_universeId << 2) + i;
@@ -223,6 +225,9 @@ contract SisypheanExchange is ForkedERC1155 {
 		universe.forkingMarket = _marketId;
 		universe.forkTime = block.timestamp;
 		universes[_universeId] = universe;
+
+		migrateREPInternal(_universeId, REP_BOND, initialReportOutcome, marketResolutionData.initialReporter, marketResolutionData.initialReporter);
+		migrateREPInternal(_universeId, disputeStake, _outcome, msg.sender, msg.sender);
 	}
 
 	function migrateREP(uint192 universeId, uint256 amount, uint8 outcome) public {
