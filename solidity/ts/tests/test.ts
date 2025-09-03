@@ -223,6 +223,12 @@ describe('Contract Test Suite', () => {
 		// We'll also report on the second market
 		await reportOutcome(client, genesisUniverse, marketId2, initialOutcome)
 
+		const genesisETHBalanceBeforeFork = (await getUniverseData(client, genesisUniverse))[2]
+		// get REP total supply - REP balance of NULL address
+		const repSupply = await getERC20Supply(client, addressString(GENESIS_REPUTATION_TOKEN))
+		const repBurned = await getERC20Balance(client, addressString(GENESIS_REPUTATION_TOKEN), addressString(1n))
+		const totalREP = repSupply - repBurned;
+
 		const disputeOutcome = 2n
 		await dispute(client2, genesisUniverse, marketId, disputeOutcome)
 
@@ -296,15 +302,11 @@ describe('Contract Test Suite', () => {
 		assert.strictEqual(client1ForkedMarketShareTokenBalancesInYesUniverseAfterInvalidMigration[0], amountToBuy, "Invalid Shares not migrated to yes universe after migration")
 		assert.strictEqual(client1ForkedMarketShareTokenBalancesInNoUniverseAfterInvalidMigration[0], amountToBuy, "Invalid Shares not migrated to no universe after migration")
 
-		// get REP total supply - REP balance of NULL address
-		const repSupply = await getERC20Supply(client, addressString(GENESIS_REPUTATION_TOKEN))
-		const repBurned = await getERC20Balance(client, addressString(GENESIS_REPUTATION_TOKEN), addressString(1n))
-		const totalREP = repSupply - repBurned;
-
 		// get ETH balance of genesis and NO child universe
-		const genesisETHBalance = (await getUniverseData(client, genesisUniverse))[2]
 		const noUniverseETHBalance = (await getUniverseData(client, noUniverseId))[2]
-		assert.strictEqual(noUniverseETHBalance, 0n, "NO universe ETH balance not initially 0")
+		const disputeBond = REP_BOND * 2n
+		const correspondingDisputeETH = disputeBond * genesisETHBalanceBeforeFork / totalREP;
+		assert.strictEqual(noUniverseETHBalance, correspondingDisputeETH, "NO universe ETH balance not initially as expected")
 
 		// migrate REP from client 1 to NO universe
 		const client1REPBalance = await getERC20Balance(client, addressString(GENESIS_REPUTATION_TOKEN), client.account.address)
@@ -312,16 +314,19 @@ describe('Contract Test Suite', () => {
 		await migrateREP(client, genesisUniverse, repMigrationAmount, 2n)
 
 		const repBurnedAfterMigration = await getERC20Balance(client, addressString(GENESIS_REPUTATION_TOKEN), addressString(BURN_ADDRESS))
-		assert.strictEqual(repBurnedAfterMigration, repBurned + repMigrationAmount, "REP not sent to burn address during migration")
+		assert.strictEqual(repBurnedAfterMigration, repBurned + repMigrationAmount + REP_BOND + disputeBond, "REP not sent to burn address during migration")
 
 		// check eth balance of genesis and NO child universe
 		const genesisETHBalanceAfterMigration = (await getUniverseData(client, genesisUniverse))[2]
 		const noUniverseETHBalanceAfterMigration = (await getUniverseData(client, noUniverseId))[2]
+		const yesUniverseETHBalanceAfterMigration = (await getUniverseData(client, yesUniverseId))[2]
 
-		const correspondingETH = repMigrationAmount * genesisETHBalance / totalREP;
-		const expectedGenesisETHBalance = genesisETHBalance - correspondingETH
+		const expectedNoUniverseETHBalance = genesisETHBalanceBeforeFork * (repMigrationAmount + disputeBond) / totalREP
+		const expectedYesUniverseETHBalance = genesisETHBalanceBeforeFork * REP_BOND / totalREP
+		const expectedGenesisETHBalance = genesisETHBalanceBeforeFork - expectedNoUniverseETHBalance - expectedYesUniverseETHBalance
 		assert.strictEqual(genesisETHBalanceAfterMigration, expectedGenesisETHBalance, "Genesis ETH balance not as expected after REP migration")
-		assert.strictEqual(noUniverseETHBalanceAfterMigration, correspondingETH, "NO universe ETH balance not as expected after REP migration")
+		assert.strictEqual(noUniverseETHBalanceAfterMigration, expectedNoUniverseETHBalance, "NO universe ETH balance not as expected after REP migration")
+		assert.strictEqual(yesUniverseETHBalanceAfterMigration, expectedYesUniverseETHBalance, "YES universe ETH balance not as expected after REP migration")
 
 		// We can migrate the REP staked in the other market
 		await migrateStakedRep(client, genesisUniverse, marketId2, 2n)
@@ -329,11 +334,11 @@ describe('Contract Test Suite', () => {
 		const genesisETHBalanceAfterStakedMigration = (await getUniverseData(client, genesisUniverse))[2]
 		const noUniverseETHBalanceAfterStakedMigration = (await getUniverseData(client, noUniverseId))[2]
 
-		const correspondingETHAfterMigration = REP_BOND * expectedGenesisETHBalance / (totalREP - repBurnedAfterMigration);
-		const expectedGenesisETHBalanceAfterStakedMigration = genesisETHBalanceAfterMigration - correspondingETHAfterMigration
+		const expectedNoUniverseETHBalanceAfterStakedMigration = (genesisETHBalanceBeforeFork * (repMigrationAmount + disputeBond + REP_BOND) / totalREP) - 1n // rounding
+		const expectedGenesisETHBalanceAfterStakedMigration = genesisETHBalanceBeforeFork - expectedNoUniverseETHBalanceAfterStakedMigration - yesUniverseETHBalanceAfterMigration
 
 		assert.strictEqual(genesisETHBalanceAfterStakedMigration, expectedGenesisETHBalanceAfterStakedMigration, "Genesis ETH balance not as expected after staked REP migration")
-		assert.strictEqual(noUniverseETHBalanceAfterStakedMigration, correspondingETH + correspondingETHAfterMigration, "NO universe ETH balance not as expected after staked REP migration")
+		assert.strictEqual(noUniverseETHBalanceAfterStakedMigration, expectedNoUniverseETHBalanceAfterStakedMigration, "NO universe ETH balance not as expected after staked REP migration")
 
 		// We cannot participate in the REP auction yet
 		const ethBalanceDelta = (await getUniverseData(client, noUniverseId))[4]
