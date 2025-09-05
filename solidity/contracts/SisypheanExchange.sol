@@ -34,6 +34,7 @@ contract SisypheanExchange is ForkedERC1155 {
 		address initialReporter;
 		uint8 outcome;
 		uint64 reportTime;
+		bool finalized;
 	}
 
 	mapping(uint56 => MarketData) public markets;
@@ -162,12 +163,17 @@ contract SisypheanExchange is ForkedERC1155 {
 		marketResolutions[_universeId][_marketId].reportTime = uint64(block.timestamp);
 	}
 
-	function returnRepBond(uint192 _universeId, uint56 _marketId) external {
+	function finalizeMarket(uint192 _universeId, uint56 _marketId) external returns (uint8) {
 		Universe memory universe = universes[_universeId];
 		MarketResolutionData memory marketResolutionData = marketResolutions[_universeId][_marketId];
-		require(marketResolutionDataIsFinalized(marketResolutionData), "Cannot withdraw REP bond before finalized");
+		if (!marketResolutionData.finalized) {
+			require(marketResolutionDataIsFinalized(marketResolutionData), "Cannot withdraw REP bond before finalized");
+			marketResolutionData.finalized = true;
+			marketResolutions[_universeId][_marketId] = marketResolutionData;
 
-		universe.reputationToken.transfer(marketResolutionData.initialReporter, REP_BOND);
+			universe.reputationToken.transfer(marketResolutionData.initialReporter, REP_BOND);
+		}
+		return marketResolutionData.outcome;
 	}
 
 	function migrateStakedRep(uint192 _universeId, uint56 _marketId, uint8 _outcome) external {
@@ -180,6 +186,7 @@ contract SisypheanExchange is ForkedERC1155 {
 
 	function isFinalized(uint192 _universeId, uint56 _marketId) external view returns (bool) {
 		MarketResolutionData memory marketResolutionData = marketResolutions[_universeId][_marketId];
+		if (marketResolutionData.finalized) return true;
 		return marketResolutionDataIsFinalized(marketResolutionData);
 	}
 
@@ -219,6 +226,7 @@ contract SisypheanExchange is ForkedERC1155 {
 
 			marketResolutions[childUniverseId][_marketId].reportTime = 1;
 			marketResolutions[childUniverseId][_marketId].outcome = i - 1;
+			marketResolutions[childUniverseId][_marketId].finalized = true;
 		}
 
 		universe.forkingMarket = _marketId;

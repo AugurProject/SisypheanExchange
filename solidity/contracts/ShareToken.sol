@@ -71,7 +71,8 @@ contract ShareToken is ForkedERC1155 {
 	function claimTradingProceeds(uint192 _universeId, uint56 _marketId, address _owner, address _recipient) external {
 		require(_owner == msg.sender || isApprovedForAll(_owner, msg.sender) == true, "ERC1155: need operator approval to claim proceeds");
 
-		uint8 _outcome = sisypheanExchange.getWinningOutcome(_universeId, _marketId);
+
+		uint8 _outcome = sisypheanExchange.finalizeMarket(_universeId, _marketId);
 		uint256 _tokenId = getTokenId(_universeId, _marketId, _outcome);
 
 		uint256 _balance = balanceOf(_owner, _tokenId);
