@@ -342,12 +342,12 @@ export const reportOutcome = async (client: WriteClient, universe: bigint, marke
 	})
 }
 
-export const returnRepBond = async (client: WriteClient, universe: bigint, market: bigint) => {
+export const finalizeMarket = async (client: WriteClient, universe: bigint, market: bigint) => {
 	const sisypheanExchangeAddress = getSisypheanExchangeAddress()
 	return await client.writeContract({
 		chain: mainnet,
 		abi: contractsArtifact.contracts['contracts/SisypheanExchange.sol'].SisypheanExchange.abi as Abi,
-		functionName: 'returnRepBond',
+		functionName: 'finalizeMarket',
 		address: sisypheanExchangeAddress,
 		args: [universe, market]
 	})

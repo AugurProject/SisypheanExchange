@@ -9,4 +9,5 @@ interface ISisypheanExchange {
 	function forked(uint192 _universeId) external view returns (bool);
 	function migrate(uint256 fromId) external;
 	function balanceOf(address account, uint256 id) external view returns (uint256);
+	function finalizeMarket(uint192 _universeId, uint56 _marketId) external returns (uint8);
 }
