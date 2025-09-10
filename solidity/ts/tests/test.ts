@@ -321,7 +321,7 @@ describe('Contract Test Suite', () => {
 		const noUniverseETHBalanceAfterMigration = (await getUniverseData(client, noUniverseId))[2]
 		const yesUniverseETHBalanceAfterMigration = (await getUniverseData(client, yesUniverseId))[2]
 
-		const expectedNoUniverseETHBalance = genesisETHBalanceBeforeFork * (repMigrationAmount + disputeBond) / totalREP
+		const expectedNoUniverseETHBalance = (genesisETHBalanceBeforeFork * (repMigrationAmount + disputeBond) / totalREP) - 1n // rounding
 		const expectedYesUniverseETHBalance = genesisETHBalanceBeforeFork * REP_BOND / totalREP
 		const expectedGenesisETHBalance = genesisETHBalanceBeforeFork - expectedNoUniverseETHBalance - expectedYesUniverseETHBalance
 		assert.strictEqual(genesisETHBalanceAfterMigration, expectedGenesisETHBalance, "Genesis ETH balance not as expected after REP migration")
@@ -334,7 +334,7 @@ describe('Contract Test Suite', () => {
 		const genesisETHBalanceAfterStakedMigration = (await getUniverseData(client, genesisUniverse))[2]
 		const noUniverseETHBalanceAfterStakedMigration = (await getUniverseData(client, noUniverseId))[2]
 
-		const expectedNoUniverseETHBalanceAfterStakedMigration = (genesisETHBalanceBeforeFork * (repMigrationAmount + disputeBond + REP_BOND) / totalREP) - 1n // rounding
+		const expectedNoUniverseETHBalanceAfterStakedMigration = (genesisETHBalanceBeforeFork * (repMigrationAmount + disputeBond + REP_BOND) / totalREP) - 2n // rounding
 		const expectedGenesisETHBalanceAfterStakedMigration = genesisETHBalanceBeforeFork - expectedNoUniverseETHBalanceAfterStakedMigration - yesUniverseETHBalanceAfterMigration
 
 		assert.strictEqual(genesisETHBalanceAfterStakedMigration, expectedGenesisETHBalanceAfterStakedMigration, "Genesis ETH balance not as expected after staked REP migration")
@@ -425,18 +425,10 @@ describe('Contract Test Suite', () => {
 		const yesUniverseId = 2n
 		const noUniverseId = 3n
 
-		const client2EthBalance = await getETHBalance(client2, client2.account.address)
-
-		// Client 2 buys complete sets in the YES universe and trades in the winning Yes shares for a full payout
-		await buyCompleteSets(client2, yesUniverseId, marketId, client2.account.address, amountToBuy)
-
-		await claimTradingProceeds(client2, yesUniverseId, marketId, client2.account.address, client2.account.address)
-
-		const client2EthBalanceAfterClaim = await getETHBalance(client2, client2.account.address)
+		// Client 2 cannot buy complete sets in the YES universe since it failed to complete its auction
+		assert.rejects(buyCompleteSets(client2, yesUniverseId, marketId, client2.account.address, amountToBuy))
 
 		const gasFudge = 10n**15n
-
-		assert.ok(client2EthBalance - client2EthBalanceAfterClaim < gasFudge, "Client 2 claim did not return expected ETH");
 
 		// Client 1 sells No shares in No universe for the corresponding partial payout
 		const forkedMarketNoId = await getTokenId(client, genesisUniverse, marketId, 2n)
@@ -445,7 +437,7 @@ describe('Contract Test Suite', () => {
 		const clientShareBalances = await getMarketShareTokenBalance(client, noUniverseId, marketId, client.account.address)
 		const noUniverseData = await getUniverseData(client, noUniverseId)
 
-		const ethForCash = noUniverseData[6]
+		const ethForCash = noUniverseData[7]
 
 		const clientEthBalance = await getETHBalance(client, client.account.address)
 
