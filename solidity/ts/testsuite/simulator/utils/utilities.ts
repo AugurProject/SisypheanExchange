@@ -307,7 +307,7 @@ export const getUniverseData = async (client: ReadClient, universeId: bigint) =>
 		functionName: 'universes',
 		address: sisypheanExchangeAddress,
 		args: [universeId]
-	}) as [Address, bigint, bigint, bigint, bigint, boolean, bigint]
+	}) as [Address, bigint, bigint, bigint, bigint, boolean, boolean, bigint]
 }
 
 export const createMarket = async (client: WriteClient, universe: bigint, endTime: bigint ,extraInfo: String) => {

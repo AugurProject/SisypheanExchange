@@ -9,6 +9,8 @@ import './IERC20.sol';
 
 // NOTE: Currently a resolved market could be traded on and resolved again in a child universe. We can add things to prevent this if needed.
 
+// TODO: ETH migration should occur once the auction begins instead of immediately as REP is migrated. In the REP denominated world this may work in a significantly different way so delete if irrelevant, otherwise apply to that system as appropriate.
+
 contract SisypheanExchange is ForkedERC1155 {
 
 	struct Universe {
@@ -18,6 +20,7 @@ contract SisypheanExchange is ForkedERC1155 {
 		uint256 forkTime;
 		uint256 ethBalanceDelta;
 		bool auctionFinished;
+		bool auctionFilled;
 		uint256 ethForCash;
 	}
 
@@ -62,6 +65,7 @@ contract SisypheanExchange is ForkedERC1155 {
 			0,
 			0,
 			0,
+			true,
 			true,
 			1 ether
 		);
@@ -115,6 +119,7 @@ contract SisypheanExchange is ForkedERC1155 {
 		Universe memory universe = universes[_universeId];
 		require(universe.forkingMarket == 0, "Universe is forked");
 		require(universe.auctionFinished, "Auction not finished");
+		require(universe.auctionFilled, "Auction not filled");
 		correspondingCash = msg.value * 1 ether / universe.ethForCash;
 		_mint(_recipient, _universeId, correspondingCash);
 		universe.ethBalance += msg.value;
@@ -138,6 +143,7 @@ contract SisypheanExchange is ForkedERC1155 {
 	function createMarket(uint192 _universeId, uint64 _endTime, address _designatedReporterAddress, string memory _extraInfo) public returns (uint56 _marketId) {
 		Universe memory universe = universes[_universeId];
 		require(universe.forkingMarket == 0, "Universe is forked");
+		require(universe.auctionFilled, "Auction not filled");
 		universe.reputationToken.transferFrom(msg.sender, address(this), REP_BOND);
 		_marketId = ++marketIdCounter;
 		markets[_marketId] = MarketData(
@@ -220,6 +226,7 @@ contract SisypheanExchange is ForkedERC1155 {
 				0,
 				0,
 				universe.ethBalance,
+				false,
 				false,
 				0
 			);
@@ -315,6 +322,7 @@ contract SisypheanExchange is ForkedERC1155 {
 		childUniverse.ethBalance += msg.value;
 		childUniverse.ethBalanceDelta = 0;
 		childUniverse.auctionFinished = true;
+		childUniverse.auctionFilled = true;
 		childUniverse.ethForCash = 1 ether;
 		universes[childUniverseId] = childUniverse;
 	}
@@ -331,6 +339,7 @@ contract SisypheanExchange is ForkedERC1155 {
 			uint192 childUniverseId = (forkingUniverseId << 2) + i;
 			Universe memory childUniverse = universes[childUniverseId];
 			childUniverse.auctionFinished = true;
+			childUniverse.auctionFilled = false;
 			childUniverse.ethForCash = 1 ether * childUniverse.ethBalance / totalCashSupply;
 			universes[childUniverseId] = childUniverse;
 		}
