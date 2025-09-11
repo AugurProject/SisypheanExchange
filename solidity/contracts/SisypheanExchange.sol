@@ -9,7 +9,7 @@ import './IERC20.sol';
 
 // NOTE: Currently a resolved market could be traded on and resolved again in a child universe. We can add things to prevent this if needed.
 
-// TODO: ETH migration should occur once the auction begins instead of immediately as REP is migrated.
+// TODO: ETH migration should occur once the auction begins instead of immediately as REP is migrated. In the REP denominated world this may work in a significantly different way so delete if irrelevant, otherwise apply to that system as appropriate.
 
 contract SisypheanExchange is ForkedERC1155 {
 
